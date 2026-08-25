@@ -9,29 +9,54 @@ const {
   PRICE_MAX: GLOBAL_PRICE_MAX,
   POLL_INTERVAL_SECONDS = "45",
   VINTED_COOKIE,
+  DISCORD_GIFS,
 } = process.env;
 
-// Parse une entree "mot-cle" ou "mot-cle:min-max" (min et max optionnels chacun)
+// Liste de GIFs decoratifs (optionnel). Separer plusieurs liens par des virgules.
+const gifUrls = (DISCORD_GIFS || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+function pickRandomGif() {
+  if (gifUrls.length === 0) return undefined;
+  return gifUrls[Math.floor(Math.random() * gifUrls.length)];
+}
+
+// Parse une entree "mot-cle", "mot-cle:min-max", "mot-cle!excl1,excl2" ou combinaison
+// "mot-cle:min-max!excl1,excl2". Le "!" introduit une liste de mots a exclure du titre.
 function parseSearchEntry(entry) {
   const trimmed = entry.trim();
-  const lastColon = trimmed.lastIndexOf(":");
+
+  const bangIndex = trimmed.indexOf("!");
+  const remainder = bangIndex === -1 ? trimmed : trimmed.slice(0, bangIndex);
+  const excludeRaw = bangIndex === -1 ? "" : trimmed.slice(bangIndex + 1);
+
+  const excludeWords = excludeRaw
+    .split(",")
+    .map((w) => w.trim().toLowerCase())
+    .filter(Boolean);
+
+  const lastColon = remainder.lastIndexOf(":");
 
   if (lastColon === -1) {
     return {
-      searchText: trimmed,
+      searchText: remainder.trim(),
       priceMin: GLOBAL_PRICE_MIN || undefined,
       priceMax: GLOBAL_PRICE_MAX || undefined,
+      excludeWords,
     };
   }
 
-  const keyword = trimmed.slice(0, lastColon).trim();
-  const range = trimmed.slice(lastColon + 1).trim();
+  const keyword = remainder.slice(0, lastColon).trim();
+  const range = remainder.slice(lastColon + 1).trim();
   const [minRaw, maxRaw] = range.split("-");
 
   return {
     searchText: keyword,
     priceMin: minRaw ? minRaw.trim() : GLOBAL_PRICE_MIN || undefined,
     priceMax: maxRaw ? maxRaw.trim() : GLOBAL_PRICE_MAX || undefined,
+    excludeWords,
   };
 }
 
@@ -95,14 +120,14 @@ let isFirstRun = seenIds.size === 0;
 
 async function checkOnce() {
   for (const group of groups) {
-    for (const { searchText, priceMin, priceMax } of group.searches) {
+    for (const { searchText, priceMin, priceMax, excludeWords } of group.searches) {
       const priceLabel =
         priceMin || priceMax ? ` (${priceMin || "0"}-${priceMax || "∞"}€)` : "";
       const label = `${searchText}${priceLabel}`;
       const seenKey = (id) => `${group.label}::${id}`;
 
       try {
-        const items = await searchVinted({
+        const rawItems = await searchVinted({
           domain: VINTED_DOMAIN,
           searchText,
           priceMin,
@@ -110,13 +135,21 @@ async function checkOnce() {
           cookie: VINTED_COOKIE,
         });
 
+        const items =
+          excludeWords && excludeWords.length > 0
+            ? rawItems.filter((item) => {
+                const titleLower = (item.title || "").toLowerCase();
+                return !excludeWords.some((w) => titleLower.includes(w));
+              })
+            : rawItems;
+
         const newItems = items.filter((item) => !seenIds.has(seenKey(item.id)));
 
         for (const item of newItems) {
           seenIds.add(seenKey(item.id));
           if (!isFirstRun) {
             try {
-              await sendDiscordAlert(group.webhookUrl, item, label);
+              await sendDiscordAlert(group.webhookUrl, item, label, pickRandomGif());
               console.log(`Alerte envoyee [${group.label}]: [${label}] ${item.title}`);
             } catch (err) {
               console.error(`Erreur envoi Discord [${group.label}]:`, err.message);
