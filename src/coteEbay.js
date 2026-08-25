@@ -121,7 +121,12 @@ export async function lookupEbayCote(cardName) {
     cache.set(cacheKey, { value: result, timestamp: Date.now() });
     return result;
   } catch (err) {
-    console.error(`Erreur lookup eBay pour "${cardName}":`, err.response?.data?.errors?.[0]?.message || err.message);
+    const errorBody = err.response?.data;
+    const detail =
+      errorBody?.error_description || // erreurs OAuth (token endpoint)
+      errorBody?.errors?.[0]?.message || // erreurs Browse API
+      err.message;
+    console.error(`Erreur lookup eBay pour "${cardName}" (${err.response?.status || "?"}): ${detail}`);
     return null;
   }
 }
