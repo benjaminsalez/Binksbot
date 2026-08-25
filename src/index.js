@@ -2,6 +2,7 @@ import "dotenv/config";
 import { searchVinted } from "./vinted.js";
 import { sendDiscordAlert } from "./discord.js";
 import { loadSeenIds, saveSeenIds } from "./storage.js";
+import { checkIfGoodDeal } from "./dealChecker.js";
 
 const {
   VINTED_DOMAIN = "vinted.fr",
@@ -28,11 +29,20 @@ function pickRandomGif() {
 //  mot-cle:min-max      -> fourchette de prix
 //  mot-cle!excl1,excl2  -> mots a exclure du titre
 //  mot-cle#3002         -> restreindre a une categorie Vinted (catalog_id)
+//  mot-cle$30           -> mode "bonne affaire": n'alerte que si le prix est
+//                          au moins 30% sous la cote Cardmarket estimee
 // Combinable dans n'importe quel ordre, ex: "pokemon emeraude#3002!carte:10-50"
 function parseSearchEntry(entry) {
   let remainder = entry.trim();
   let excludeWords = [];
   let catalogId;
+  let dealThreshold;
+
+  const dollarMatch = remainder.match(/\$(\d+)/);
+  if (dollarMatch) {
+    dealThreshold = Number(dollarMatch[1]);
+    remainder = remainder.replace(dollarMatch[0], "").trim();
+  }
 
   const catalogMatch = remainder.match(/#(\d+)/);
   if (catalogMatch) {
@@ -58,6 +68,7 @@ function parseSearchEntry(entry) {
       priceMax: GLOBAL_PRICE_MAX || undefined,
       excludeWords,
       catalogId,
+      dealThreshold,
     };
   }
 
@@ -71,6 +82,7 @@ function parseSearchEntry(entry) {
     priceMax: maxRaw ? maxRaw.trim() : GLOBAL_PRICE_MAX || undefined,
     excludeWords,
     catalogId,
+    dealThreshold,
   };
 }
 
@@ -136,7 +148,7 @@ async function checkOnce() {
   let blockedDetected = false;
 
   for (const group of groups) {
-    for (const { searchText, priceMin, priceMax, excludeWords, catalogId } of group.searches) {
+    for (const { searchText, priceMin, priceMax, excludeWords, catalogId, dealThreshold } of group.searches) {
       const priceLabel =
         priceMin || priceMax ? ` (${priceMin || "0"}-${priceMax || "∞"}€)` : "";
       const label = `${searchText}${priceLabel}`;
@@ -173,9 +185,16 @@ async function checkOnce() {
         for (const item of newItems) {
           seenIds.add(itemSeenKey(item.id));
           if (!isSearchFirstRun) {
+            let dealInfo = null;
+            if (dealThreshold) {
+              dealInfo = await checkIfGoodDeal(item, dealThreshold);
+              if (!dealInfo) continue; // pas une bonne affaire confirmee -> on ignore silencieusement
+            }
+
             try {
-              await sendDiscordAlert(group.webhookUrl, item, label, pickRandomGif());
-              console.log(`Alerte envoyee [${group.label}]: [${label}] ${item.title}`);
+              await sendDiscordAlert(group.webhookUrl, item, label, pickRandomGif(), dealInfo);
+              const dealSuffix = dealInfo ? ` [BONNE AFFAIRE -${dealInfo.discountPercent}%]` : "";
+              console.log(`Alerte envoyee [${group.label}]: [${label}] ${item.title}${dealSuffix}`);
             } catch (err) {
               console.error(`Erreur envoi Discord [${group.label}]:`, err.message);
             }
