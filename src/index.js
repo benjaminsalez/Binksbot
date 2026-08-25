@@ -182,13 +182,18 @@ async function checkOnce() {
 
         const newItems = items.filter((item) => !seenIds.has(itemSeenKey(item.id)));
 
+        let analyzedCount = 0;
+        let dealsFoundCount = 0;
+
         for (const item of newItems) {
           seenIds.add(itemSeenKey(item.id));
           if (!isSearchFirstRun) {
             let dealInfo = null;
             if (dealThreshold) {
+              analyzedCount++;
               dealInfo = await checkIfGoodDeal(item, dealThreshold);
               if (!dealInfo) continue; // pas une bonne affaire confirmee -> on ignore silencieusement
+              dealsFoundCount++;
             }
 
             try {
@@ -200,6 +205,12 @@ async function checkOnce() {
             }
             await new Promise((r) => setTimeout(r, 500));
           }
+        }
+
+        if (dealThreshold && analyzedCount > 0) {
+          console.log(
+            `[${group.label}] "${label}": ${analyzedCount} nouvelle(s) annonce(s) analysee(s), ${dealsFoundCount} bonne(s) affaire(s) trouvee(s).`
+          );
         }
 
         if (isSearchFirstRun) {
