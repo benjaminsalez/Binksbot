@@ -1,0 +1,14 @@
+{
+  "name": "vinted-pokemon-bot",
+  "version": "1.0.0",
+  "description": "Alerte Discord en temps reel pour les nouvelles annonces de cartes Pokemon sur Vinted",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.2",
+    "dotenv": "^16.4.5"
+  }
+}
