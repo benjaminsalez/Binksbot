@@ -220,7 +220,14 @@ const MAX_BACKOFF_MS = 15 * 60 * 1000;
 let consecutiveBlocks = 0;
 
 async function loop() {
-  const blocked = await checkOnce();
+  let blocked = false;
+  try {
+    blocked = await checkOnce();
+  } catch (err) {
+    // Filet de securite ultime: quoi qu'il arrive, le bot ne doit jamais
+    // planter completement, juste logger et continuer au cycle suivant.
+    console.error("Erreur inattendue dans checkOnce, le bot continue:", err.message);
+  }
 
   if (blocked) {
     consecutiveBlocks += 1;
