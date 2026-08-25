@@ -24,6 +24,14 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
     return { isDeal: false, reason: "nom_carte_non_extrait", titleGuess };
   }
 
+  // On exclut les annonces explicitement dans une autre langue que le
+  // francais (le titre mentionne "EN", "anglais", "jap", "allemande"...).
+  // Si la langue n'est pas precisee du tout, on part du principe qu'elle
+  // est francaise par defaut (site vinted.fr).
+  if (analysis.language && analysis.language !== "fr") {
+    return { isDeal: false, reason: "langue_non_fr", langueDetectee: analysis.language, titleGuess };
+  }
+
   let referencePrice = null;
   let source = null;
   let matchedName = analysis.cardName;
