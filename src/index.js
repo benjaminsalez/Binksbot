@@ -133,6 +133,8 @@ const intervalMs = Math.max(20, Number(POLL_INTERVAL_SECONDS)) * 1000;
 let seenIds = loadSeenIds();
 
 async function checkOnce() {
+  let blockedDetected = false;
+
   for (const group of groups) {
     for (const { searchText, priceMin, priceMax, excludeWords, catalogId } of group.searches) {
       const priceLabel =
@@ -190,6 +192,7 @@ async function checkOnce() {
       } catch (err) {
         const status = err.response?.status;
         if (status === 403 || status === 429 || status === 401) {
+          blockedDetected = true;
           console.error(
             `Bloque par Vinted (code ${status}) sur [${group.label}] "${label}". Verifie VINTED_COOKIE, voir README.`
           );
@@ -201,6 +204,7 @@ async function checkOnce() {
   }
 
   saveSeenIds(seenIds);
+  return blockedDetected;
 }
 
 const totalSearches = groups.reduce((sum, g) => sum + g.searches.length, 0);
@@ -208,5 +212,30 @@ console.log(
   `Bot demarre. ${groups.length} salon(s), ${totalSearches} recherche(s) au total, toutes les ${intervalMs / 1000}s sur ${VINTED_DOMAIN}.`
 );
 
-checkOnce();
-setInterval(checkOnce, intervalMs);
+// Pause progressive: si Vinted bloque plusieurs fois de suite, on espace les
+// tentatives (double a chaque echec) jusqu'a un plafond de 15 minutes, puis on
+// revient a l'intervalle normal des que ca repasse. Evite de marteler Vinted
+// pendant un blocage et reduit le risque d'aggraver la detection.
+const MAX_BACKOFF_MS = 15 * 60 * 1000;
+let consecutiveBlocks = 0;
+
+async function loop() {
+  const blocked = await checkOnce();
+
+  if (blocked) {
+    consecutiveBlocks += 1;
+    const backoffMs = Math.min(intervalMs * 2 ** consecutiveBlocks, MAX_BACKOFF_MS);
+    console.warn(
+      `Blocage detecte, pause de ${Math.round(backoffMs / 1000)}s avant la prochaine tentative (echec n°${consecutiveBlocks}).`
+    );
+    setTimeout(loop, backoffMs);
+  } else {
+    if (consecutiveBlocks > 0) {
+      console.log("Blocage resolu, retour a l'intervalle normal.");
+    }
+    consecutiveBlocks = 0;
+    setTimeout(loop, intervalMs);
+  }
+}
+
+loop();
