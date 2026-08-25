@@ -8,28 +8,48 @@ import { lookupCote } from "./cote.js";
  * identifiee, pas de prix trouve, etat inconnu) -> on prefere rater une
  * annonce plutot que d'alerter sur une estimation bancale.
  */
+/**
+ * Analyse une annonce et determine si c'est une bonne affaire par rapport
+ * a la cote (prix Cardmarket), en tenant compte de l'etat detecte.
+ * Retourne TOUJOURS un objet diagnostic, avec isDeal:true/false et une
+ * raison si ce n'est pas une bonne affaire confirmee -> utile pour debug.
+ */
 export async function checkIfGoodDeal(item, thresholdPercent) {
+  const titleGuess = item.title?.slice(0, 60) || "";
   const analysis = analyzeTitle(item.title || "");
 
-  if (!analysis.cardName) return null;
+  if (!analysis.cardName) {
+    return { isDeal: false, reason: "nom_carte_non_extrait", titleGuess };
+  }
 
   const cote = await lookupCote(analysis.cardName, analysis.setNumber);
-  if (!cote) return null;
+  if (!cote) {
+    return { isDeal: false, reason: "cote_introuvable", cardNameGuess: analysis.cardName, titleGuess };
+  }
 
-  // Si l'etat n'est pas mentionne dans le titre, on part du principe le plus
-  // prudent possible: on suppose un etat "excellent" par defaut (multiplicateur
-  // eleve), pour ne jamais sur-estimer la remise et alerter a tort.
   const conditionMultiplier = analysis.condition?.multiplier ?? 0.85;
   const referencePrice = cote.trendPrice * conditionMultiplier;
 
-  if (!referencePrice || referencePrice <= 0) return null;
-  if (!item.price) return null;
+  if (!referencePrice || referencePrice <= 0 || !item.price) {
+    return { isDeal: false, reason: "prix_invalide", cardNameGuess: analysis.cardName, titleGuess };
+  }
 
   const discountPercent = ((referencePrice - item.price) / referencePrice) * 100;
 
-  if (discountPercent < thresholdPercent) return null;
+  if (discountPercent < thresholdPercent) {
+    return {
+      isDeal: false,
+      reason: "sous_le_seuil",
+      cardNameGuess: cote.matchedName,
+      referencePrice: referencePrice.toFixed(2),
+      askingPrice: item.price,
+      discountPercent: Math.round(discountPercent),
+      titleGuess,
+    };
+  }
 
   return {
+    isDeal: true,
     discountPercent: Math.round(discountPercent),
     referencePrice: referencePrice.toFixed(2),
     cardName: cote.matchedName,
