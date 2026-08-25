@@ -23,28 +23,41 @@ function pickRandomGif() {
   return gifUrls[Math.floor(Math.random() * gifUrls.length)];
 }
 
-// Parse une entree "mot-cle", "mot-cle:min-max", "mot-cle!excl1,excl2" ou combinaison
-// "mot-cle:min-max!excl1,excl2". Le "!" introduit une liste de mots a exclure du titre.
+// Parse une entree combinant plusieurs options facultatives:
+//  mot-cle              -> recherche simple
+//  mot-cle:min-max      -> fourchette de prix
+//  mot-cle!excl1,excl2  -> mots a exclure du titre
+//  mot-cle#3002         -> restreindre a une categorie Vinted (catalog_id)
+// Combinable dans n'importe quel ordre, ex: "pokemon emeraude#3002!carte:10-50"
 function parseSearchEntry(entry) {
-  const trimmed = entry.trim();
+  let remainder = entry.trim();
+  let excludeWords = [];
+  let catalogId;
 
-  const bangIndex = trimmed.indexOf("!");
-  const remainder = bangIndex === -1 ? trimmed : trimmed.slice(0, bangIndex);
-  const excludeRaw = bangIndex === -1 ? "" : trimmed.slice(bangIndex + 1);
+  const catalogMatch = remainder.match(/#(\d+)/);
+  if (catalogMatch) {
+    catalogId = catalogMatch[1];
+    remainder = remainder.replace(catalogMatch[0], "").trim();
+  }
 
-  const excludeWords = excludeRaw
-    .split(",")
-    .map((w) => w.trim().toLowerCase())
-    .filter(Boolean);
+  const bangIndex = remainder.indexOf("!");
+  if (bangIndex !== -1) {
+    const excludeRaw = remainder.slice(bangIndex + 1);
+    excludeWords = excludeRaw
+      .split(",")
+      .map((w) => w.trim().toLowerCase())
+      .filter(Boolean);
+    remainder = remainder.slice(0, bangIndex).trim();
+  }
 
   const lastColon = remainder.lastIndexOf(":");
-
   if (lastColon === -1) {
     return {
       searchText: remainder.trim(),
       priceMin: GLOBAL_PRICE_MIN || undefined,
       priceMax: GLOBAL_PRICE_MAX || undefined,
       excludeWords,
+      catalogId,
     };
   }
 
@@ -57,6 +70,7 @@ function parseSearchEntry(entry) {
     priceMin: minRaw ? minRaw.trim() : GLOBAL_PRICE_MIN || undefined,
     priceMax: maxRaw ? maxRaw.trim() : GLOBAL_PRICE_MAX || undefined,
     excludeWords,
+    catalogId,
   };
 }
 
@@ -120,7 +134,7 @@ let isFirstRun = seenIds.size === 0;
 
 async function checkOnce() {
   for (const group of groups) {
-    for (const { searchText, priceMin, priceMax, excludeWords } of group.searches) {
+    for (const { searchText, priceMin, priceMax, excludeWords, catalogId } of group.searches) {
       const priceLabel =
         priceMin || priceMax ? ` (${priceMin || "0"}-${priceMax || "∞"}€)` : "";
       const label = `${searchText}${priceLabel}`;
@@ -132,6 +146,7 @@ async function checkOnce() {
           searchText,
           priceMin,
           priceMax,
+          catalogId,
           cookie: VINTED_COOKIE,
         });
 
