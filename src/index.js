@@ -11,7 +11,10 @@ const {
   POLL_INTERVAL_SECONDS = "45",
   VINTED_COOKIE,
   DISCORD_GIFS,
+  DEAL_DEBUG,
 } = process.env;
+
+const dealDebugEnabled = DEAL_DEBUG === "true";
 
 // Liste de GIFs decoratifs (optionnel). Separer plusieurs liens par des virgules.
 const gifUrls = (DISCORD_GIFS || "")
@@ -191,8 +194,14 @@ async function checkOnce() {
             let dealInfo = null;
             if (dealThreshold) {
               analyzedCount++;
-              dealInfo = await checkIfGoodDeal(item, dealThreshold);
-              if (!dealInfo) continue; // pas une bonne affaire confirmee -> on ignore silencieusement
+              const result = await checkIfGoodDeal(item, dealThreshold);
+
+              if (dealDebugEnabled) {
+                console.log(`[DEBUG ${group.label}]`, JSON.stringify(result));
+              }
+
+              if (!result.isDeal) continue; // pas une bonne affaire confirmee -> on ignore silencieusement
+              dealInfo = result;
               dealsFoundCount++;
             }
 
