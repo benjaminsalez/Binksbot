@@ -126,11 +126,11 @@ if (groups.length === 0) {
 
 const intervalMs = Math.max(20, Number(POLL_INTERVAL_SECONDS)) * 1000;
 
-// Le Set d'IDs vus est partage mais chaque entree est prefixee par le groupe,
-// pour qu'une meme annonce puisse alerter plusieurs salons si elle correspond
-// a plusieurs groupes differents.
+// Le Set d'IDs vus est partage, chaque entree est prefixee par le groupe ET la recherche
+// exacte, pour qu'une meme annonce puisse alerter plusieurs salons si elle correspond
+// a plusieurs groupes differents, et pour que chaque recherche ait sa propre
+// initialisation silencieuse (independante des autres recherches deja en place).
 let seenIds = loadSeenIds();
-let isFirstRun = seenIds.size === 0;
 
 async function checkOnce() {
   for (const group of groups) {
@@ -138,7 +138,10 @@ async function checkOnce() {
       const priceLabel =
         priceMin || priceMax ? ` (${priceMin || "0"}-${priceMax || "∞"}€)` : "";
       const label = `${searchText}${priceLabel}`;
-      const seenKey = (id) => `${group.label}::${id}`;
+      const prefix = `${group.label}::${searchText}::`;
+      const seenKey = (id) => `${prefix}${id}`;
+      const initMarker = `${prefix}__init__`;
+      const isSearchFirstRun = !seenIds.has(initMarker);
 
       try {
         const rawItems = await searchVinted({
@@ -162,7 +165,7 @@ async function checkOnce() {
 
         for (const item of newItems) {
           seenIds.add(seenKey(item.id));
-          if (!isFirstRun) {
+          if (!isSearchFirstRun) {
             try {
               await sendDiscordAlert(group.webhookUrl, item, label, pickRandomGif());
               console.log(`Alerte envoyee [${group.label}]: [${label}] ${item.title}`);
@@ -173,7 +176,8 @@ async function checkOnce() {
           }
         }
 
-        if (isFirstRun) {
+        if (isSearchFirstRun) {
+          seenIds.add(initMarker);
           console.log(
             `Initialisation [${group.label}] "${label}": ${items.length} annonces existantes ignorees.`
           );
@@ -192,7 +196,6 @@ async function checkOnce() {
   }
 
   saveSeenIds(seenIds);
-  isFirstRun = false;
 }
 
 const totalSearches = groups.reduce((sum, g) => sum + g.searches.length, 0);
