@@ -138,9 +138,14 @@ async function checkOnce() {
       const priceLabel =
         priceMin || priceMax ? ` (${priceMin || "0"}-${priceMax || "∞"}€)` : "";
       const label = `${searchText}${priceLabel}`;
-      const prefix = `${group.label}::${searchText}::`;
-      const seenKey = (id) => `${prefix}${id}`;
-      const initMarker = `${prefix}__init__`;
+      // Le dedoublonnage des annonces se fait par SALON (group.label) uniquement,
+      // pour qu'une meme annonce qui matche plusieurs mots-cles du meme salon
+      // ne soit alertee qu'une seule fois.
+      const itemSeenKey = (id) => `${group.label}::item::${id}`;
+      // L'initialisation silencieuse, elle, reste par recherche individuelle,
+      // pour qu'ajouter un nouveau mot-cle dans un salon existant n'alerte pas
+      // sur les annonces deja presentes pour ce nouveau mot-cle.
+      const initMarker = `${group.label}::search::${searchText}::__init__`;
       const isSearchFirstRun = !seenIds.has(initMarker);
 
       try {
@@ -161,10 +166,10 @@ async function checkOnce() {
               })
             : rawItems;
 
-        const newItems = items.filter((item) => !seenIds.has(seenKey(item.id)));
+        const newItems = items.filter((item) => !seenIds.has(itemSeenKey(item.id)));
 
         for (const item of newItems) {
-          seenIds.add(seenKey(item.id));
+          seenIds.add(itemSeenKey(item.id));
           if (!isSearchFirstRun) {
             try {
               await sendDiscordAlert(group.webhookUrl, item, label, pickRandomGif());
