@@ -21,6 +21,7 @@ export async function sendDiscordAlert(webhookUrl, item, searchLabel, gifUrl, de
     fields.push(
       { name: "🔥 Remise estimee", value: `-${dealInfo.discountPercent}%`, inline: true },
       { name: "Cote estimee", value: `${dealInfo.referencePrice} EUR`, inline: true },
+      { name: "Source", value: dealInfo.source || "inconnue", inline: true },
       { name: "Carte identifiee", value: `${dealInfo.cardName}${dealInfo.setName ? ` (${dealInfo.setName})` : ""}`, inline: false },
       { name: "Etat suppose", value: dealInfo.condition, inline: true },
       { name: "Langue supposee", value: dealInfo.language, inline: true }
