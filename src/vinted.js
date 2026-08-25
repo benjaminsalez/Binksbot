@@ -4,15 +4,21 @@ import axios from "axios";
  * Recupere les dernieres annonces Vinted pour une recherche donnee.
  * Utilise l'API interne (non officielle) de Vinted.
  */
-export async function searchVinted({ domain, searchText, priceMax, cookie }) {
+export async function searchVinted({ domain, searchText, priceMin, priceMax, catalogId, cookie }) {
   const params = new URLSearchParams({
     search_text: searchText,
     order: "newest_first",
     per_page: "20",
   });
 
+  if (priceMin) {
+    params.set("price_from", String(priceMin));
+  }
   if (priceMax) {
     params.set("price_to", String(priceMax));
+  }
+  if (catalogId) {
+    params.set("catalog_ids", String(catalogId));
   }
 
   const url = `https://www.${domain}/api/v2/catalog/items?${params.toString()}`;
