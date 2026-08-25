@@ -6,7 +6,7 @@ const NOISE_WORDS = new Set([
   "full", "art", "illustration", "edition", "édition", "1ere", "1ère", "premiere",
   "première", "wizard", "jap", "japonaise", "japonais", "de", "du", "la", "le",
   "les", "a", "à", "vendre", "lot", "unique", "originale", "original", "tcg",
-];
+]);
 
 /**
  * Essaie d'extraire le numero "xx/yyy" (numero dans l'extension) du titre.
