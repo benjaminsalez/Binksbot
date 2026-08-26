@@ -20,9 +20,27 @@ export async function sendDiscordAlert(webhookUrl, item, searchLabel, gifUrl, de
   if (dealInfo) {
     fields.push(
       { name: "🔥 Remise estimee", value: `-${dealInfo.discountPercent}%`, inline: true },
-      { name: "Cote estimee", value: `${dealInfo.referencePrice} EUR`, inline: true },
-      { name: "Source", value: dealInfo.source || "inconnue", inline: true },
-      { name: "Carte identifiee", value: `${dealInfo.cardName}${dealInfo.setName ? ` (${dealInfo.setName})` : ""}`, inline: false },
+      { name: "Prix demande", value: `${item.price} ${item.currency}`, inline: true },
+      { name: "Source retenue", value: dealInfo.source || "inconnue", inline: true }
+    );
+
+    if (dealInfo.ebayPriceDisplay) {
+      fields.push({
+        name: "Cote eBay",
+        value: `${dealInfo.ebayPriceDisplay.price} EUR (${dealInfo.ebayPriceDisplay.sampleSize} annonces)`,
+        inline: true,
+      });
+    }
+    if (dealInfo.cardmarketPriceDisplay) {
+      fields.push({
+        name: "Cote Cardmarket",
+        value: `${dealInfo.cardmarketPriceDisplay.price} EUR`,
+        inline: true,
+      });
+    }
+
+    fields.push(
+      { name: "Carte identifiee", value: `${dealInfo.cardName}${dealInfo.setName ? ` (${dealInfo.setName})` : ""}${dealInfo.identificationSource === "IA" ? " 🤖" : ""}`, inline: false },
       { name: "Etat", value: `${dealInfo.condition}${dealInfo.conditionSource ? ` (${dealInfo.conditionSource})` : ""}`, inline: true },
       { name: "Langue supposee", value: dealInfo.language, inline: true }
     );
