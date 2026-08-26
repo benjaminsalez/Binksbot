@@ -14,7 +14,7 @@ const NOISE_WORDS = new Set([
 // carte individuelle) -> comparer le prix total d'un lot a la cote d'UNE
 // carte n'a aucun sens, ces annonces doivent etre completement ignorees
 // par le calculateur de bonnes affaires, quelle que soit la langue.
-const BULK_LOT_PATTERN = /\b(lots?|lotto|lotti|vrac|bundle|collezione)\b|\b\d{2,4}\s*(cartes?|cards?|carte)\b/i;
+const BULK_LOT_PATTERN = /\b(lots?|lotto|lotti|lote|lotes|vrac|bundle|collezione)\b|\b\d{2,4}\s*(cartes?|cards?|carte|cartas)\b/i;
 
 function detectIsBulkLot(title) {
   return BULK_LOT_PATTERN.test(title);
@@ -151,8 +151,8 @@ const LANGUAGE_KEYWORDS = {
   jp: ["jap", "japonaise", "japonais", "japanese"],
   de: ["allemande", "allemand", "german", "deutsch", "mit ", "gebraucht"],
   it: ["con ", "italiana", "italiano", "timbro", "nuova", "nuovo", "usata", "usato", "carta pokemon"],
-  es: ["española", "espanol", "español", "nueva ", "usada", "usado", "carta pokemon"],
-  pt: ["português", "portugues", "nova ", "novo ", "usada", "usado"],
+  es: ["española", "espanol", "español", "nueva ", "usada", "usado", "carta pokemon", "cartas pokemon", "cartas "],
+  pt: ["português", "portugues", "nova ", "novo ", "usada", "usado", "cartas pokemon", "cartas "],
 };
 
 function detectLanguage(title) {
