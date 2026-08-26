@@ -53,7 +53,9 @@ export async function lookupTcgdexCote(cardNameFr, setNumber) {
     // parmi les candidats (plus fiable qu'un simple premier resultat).
     if (setNumber) {
       const numberOnly = setNumber.split("/")[0];
-      const exactMatch = candidates.find((c) => c.localId === numberOnly);
+      const exactMatch = candidates.find(
+        (c) => c.localId?.toLowerCase() === numberOnly.toLowerCase()
+      );
       if (exactMatch) candidates = [exactMatch];
     }
 
