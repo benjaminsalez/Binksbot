@@ -102,6 +102,10 @@ function extractSetNumber(title) {
   const noTotal = title.match(/[n°#]\s*([A-Za-z]{0,3}\d{1,3})\b/i);
   if (noTotal) return { number: noTotal[1], setTotal: null };
 
+  // Format entre parentheses avec code de set, ex: "(ASC 057)", "(SWSH 045)"
+  const parenthesized = title.match(/\(\s*[A-Za-z]{2,5}\s+(\d{1,3})\s*\)/);
+  if (parenthesized) return { number: parenthesized[1], setTotal: null };
+
   return null;
 }
 
@@ -149,16 +153,30 @@ const LANGUAGE_KEYWORDS = {
   fr: ["fr ", "française", "francaise", "vf", "français"],
   en: ["en ", "anglaise", "anglais", "english", "vo"],
   jp: ["jap", "japonaise", "japonais", "japanese"],
-  de: ["allemande", "allemand", "german", "deutsch", "mit ", "gebraucht"],
-  it: ["con ", "italiana", "italiano", "timbro", "nuova", "nuovo", "usata", "usato", "carta pokemon"],
-  es: ["española", "espanol", "español", "nueva ", "usada", "usado", "carta pokemon", "cartas pokemon", "cartas "],
-  pt: ["português", "portugues", "nova ", "novo ", "usada", "usado", "cartas pokemon", "cartas "],
+  de: ["allemande", "allemand", "german", "deutsch", "mit ", "gebraucht", "karmesin", "purpur"],
+  it: ["con ", "italiana", "italiano", "timbro", "nuova", "nuovo", "usata", "usato", "carta pokemon", "scarlatto", "violetto", "terastal"],
+  es: ["española", "espanol", "español", "nueva ", "usada", "usado", "carta pokemon", "cartas pokemon", "cartas ", "escarlata", "purpura", "púrpura"],
+  pt: ["português", "portugues", "nova ", "novo ", "usada", "usado", "cartas pokemon", "cartas ", "escarlate"],
+};
+
+// Abreviations de langue courtes: risque de faux positif si on cherche juste
+// "contient" (ex: "ita" est present dans "capitaine") -> on exige un mot
+// ISOLE via une regex avec limites de mot, pas un simple "includes".
+const LANGUAGE_ABBREVIATIONS = {
+  it: /\bita\b/i,
+  en: /\beng\b/i,
+  es: /\besp\b/i,
+  de: /\ball\b|\bger\b/i,
+  jp: /\bjap\b/i,
 };
 
 function detectLanguage(title) {
   const lower = ` ${title.toLowerCase()} `;
   for (const [lang, keywords] of Object.entries(LANGUAGE_KEYWORDS)) {
     if (keywords.some((k) => lower.includes(k))) return lang;
+  }
+  for (const [lang, pattern] of Object.entries(LANGUAGE_ABBREVIATIONS)) {
+    if (pattern.test(title)) return lang;
   }
   return null;
 }
