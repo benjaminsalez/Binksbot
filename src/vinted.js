@@ -50,6 +50,16 @@ export async function searchVinted({ domain, searchText, priceMin, priceMax, cat
     currency: item.price?.currency_code ?? "EUR",
     url: item.url,
     photoUrl: item.photo?.url ?? item.photos?.[0]?.url ?? null,
+    // Version haute resolution de la photo, utilisee specifiquement pour
+    // l'OCR (la miniature normale est trop petite/floue pour lire du texte
+    // dessus correctement).
+    photoHighResUrl:
+      item.photo?.full_size_url ??
+      item.photo?.high_resolution?.url ??
+      item.photos?.[0]?.full_size_url ??
+      item.photos?.[0]?.high_resolution?.url ??
+      item.photo?.url ??
+      null,
     brand: item.brand_title ?? null,
     user: item.user?.login ?? "inconnu",
     isBusiness: item.user?.business === true,
