@@ -124,6 +124,12 @@ function extractSetNumber(title) {
   const knownCode = title.match(KNOWN_SET_CODE_PATTERN);
   if (knownCode) return { number: knownCode[2], setTotal: null };
 
+  // Variante de carte moderne (ex, gx, vmax, vstar) suivie directement d'un
+  // numero, ex: "Entei ex 103" -> format tres courant dans les titres
+  // Vinted, sans code de set ni ponctuation particuliere.
+  const modernVariant = title.match(/\b(?:ex|gx|vmax|vstar|v)\s+(\d{1,3})\b/i);
+  if (modernVariant) return { number: modernVariant[1], setTotal: null };
+
   // Dernier recours: code de set EN MAJUSCULES non repertorie, ex: "EX 055".
   // Limite aux majuscules pour eviter de capter n'importe quel mot francais
   // suivi d'un chiffre par erreur.
