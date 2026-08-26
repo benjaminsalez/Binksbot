@@ -1,4 +1,5 @@
 import { FR_TO_EN } from "./pokemonNamesFr.js";
+import { SET_ABBREVIATIONS } from "./setAbbreviations.js";
 
 // Mots a ignorer quand on essaie de deviner le nom de la carte dans un titre Vinted.
 const NOISE_WORDS = new Set([
@@ -94,6 +95,17 @@ export function mapVintedStatus(statusText) {
  * essentiel pour ne pas confondre deux cartes portant le meme numero brut
  * dans des sous-series differentes.
  */
+// Motif regex construit a partir de toutes les abreviations connues
+// (SET_ABBREVIATIONS), pour reconnaitre "code + numero" quelle que soit la
+// casse (ex: "xy 75", "ASC 057") sans risquer de faux positif sur un mot
+// francais quelconque suivi d'un chiffre.
+const KNOWN_SET_CODE_PATTERN = (() => {
+  const codes = Object.keys(SET_ABBREVIATIONS)
+    .sort((a, b) => b.length - a.length)
+    .map((c) => c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  return new RegExp(`\\b(${codes.join("|")})\\s+(\\d{1,3})\\b`, "i");
+})();
+
 function extractSetNumber(title) {
   const withSlash = title.match(/\b([A-Za-z]{0,3}\d{1,3})\s*\/\s*([A-Za-z]{0,3}\d{1,3})\b/);
   if (withSlash) return { number: withSlash[1], setTotal: withSlash[2] };
@@ -106,10 +118,15 @@ function extractSetNumber(title) {
   const parenthesized = title.match(/\(\s*[A-Za-z]{2,5}\s+(\d{1,3})\s*\)/);
   if (parenthesized) return { number: parenthesized[1], setTotal: null };
 
-  // Format sans parentheses avec code de set EN MAJUSCULES, ex: "EX 055",
-  // "SWSH 045". Limite aux majuscules pour eviter de capter n'importe quel
-  // mot francais suivi d'un chiffre par erreur (les codes de set sont
-  // presque toujours ecrits en majuscules dans les titres).
+  // Format "code de set connu + numero", CASSE IGNOREE (ex: "palkia xy 75",
+  // "asc 057") -> fiable car limite aux vraies abreviations de notre
+  // dictionnaire, pas n'importe quel mot suivi d'un chiffre.
+  const knownCode = title.match(KNOWN_SET_CODE_PATTERN);
+  if (knownCode) return { number: knownCode[2], setTotal: null };
+
+  // Dernier recours: code de set EN MAJUSCULES non repertorie, ex: "EX 055".
+  // Limite aux majuscules pour eviter de capter n'importe quel mot francais
+  // suivi d'un chiffre par erreur.
   const bareCode = title.match(/\b[A-Z]{2,5}\s+(\d{2,3})\b/);
   if (bareCode) return { number: bareCode[1], setTotal: null };
 
