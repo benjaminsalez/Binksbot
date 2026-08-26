@@ -145,6 +145,19 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
     return { isDeal: false, reason: "prix_invalide", cardNameGuess: cardName, titleGuess };
   }
 
+  // Cartes trop peu cheres: meme avec un gros pourcentage de remise, la
+  // marge absolue est negligeable et le risque de mauvaise identification
+  // pese proportionnellement plus lourd -> pas interessant a signaler.
+  if (referencePrice < 5) {
+    return {
+      isDeal: false,
+      reason: "cote_trop_faible",
+      cardNameGuess: matchedName,
+      referencePrice: referencePrice.toFixed(2),
+      titleGuess,
+    };
+  }
+
   const discountPercent = ((referencePrice - item.price) / referencePrice) * 100;
 
   if (discountPercent < thresholdPercent) {
