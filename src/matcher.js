@@ -10,6 +10,16 @@ const NOISE_WORDS = new Set([
   "les", "a", "à", "vendre", "lot", "unique", "originale", "original", "tcg",
 ]);
 
+// Detection des annonces qui vendent un LOT de plusieurs cartes (pas une
+// carte individuelle) -> comparer le prix total d'un lot a la cote d'UNE
+// carte n'a aucun sens, ces annonces doivent etre completement ignorees
+// par le calculateur de bonnes affaires, quelle que soit la langue.
+const BULK_LOT_PATTERN = /\b(lots?|lotto|lotti|vrac|bundle|collezione)\b|\b\d{2,4}\s*(cartes?|cards?|carte)\b/i;
+
+function detectIsBulkLot(title) {
+  return BULK_LOT_PATTERN.test(title);
+}
+
 // Liste de tous les noms de Pokemon connus (FR + EN), triee du plus long au
 // plus court pour matcher les noms les plus specifiques en premier (evite
 // qu'un nom court comme "Mew" ne "mange" une correspondance dans "Mewtwo").
@@ -150,5 +160,6 @@ export function analyzeTitle(title) {
     condition: detectCondition(title),
     language: detectLanguage(title),
     isGraded: detectIsGraded(title),
+    isBulkLot: detectIsBulkLot(title),
   };
 }
