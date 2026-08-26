@@ -95,9 +95,14 @@ export function mapVintedStatus(statusText) {
  * dans des sous-series differentes.
  */
 function extractSetNumber(title) {
-  const match = title.match(/\b([A-Za-z]{0,3}\d{1,3})\s*\/\s*([A-Za-z]{0,3}\d{1,3})\b/);
-  if (!match) return null;
-  return { number: match[1], setTotal: match[2] };
+  const withSlash = title.match(/\b([A-Za-z]{0,3}\d{1,3})\s*\/\s*([A-Za-z]{0,3}\d{1,3})\b/);
+  if (withSlash) return { number: withSlash[1], setTotal: withSlash[2] };
+
+  // Format sans total, ex: "n°109", "n° 109", "#109"
+  const noTotal = title.match(/[n°#]\s*([A-Za-z]{0,3}\d{1,3})\b/i);
+  if (noTotal) return { number: noTotal[1], setTotal: null };
+
+  return null;
 }
 
 /**
