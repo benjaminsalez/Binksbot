@@ -1,3 +1,5 @@
+import { FR_TO_EN } from "./pokemonNamesFr.js";
+
 // Mots a ignorer quand on essaie de deviner le nom de la carte dans un titre Vinted.
 const NOISE_WORDS = new Set([
   "carte", "cartes", "pokemon", "pokémon", "fr", "vf", "francaise", "française",
@@ -7,6 +9,47 @@ const NOISE_WORDS = new Set([
   "première", "wizard", "jap", "japonaise", "japonais", "de", "du", "la", "le",
   "les", "a", "à", "vendre", "lot", "unique", "originale", "original", "tcg",
 ]);
+
+// Liste de tous les noms de Pokemon connus (FR + EN), triee du plus long au
+// plus court pour matcher les noms les plus specifiques en premier (evite
+// qu'un nom court comme "Mew" ne "mange" une correspondance dans "Mewtwo").
+const ALL_KNOWN_NAMES = (() => {
+  const names = new Set();
+  for (const [fr, en] of Object.entries(FR_TO_EN)) {
+    names.add(fr);
+    names.add(en.toLowerCase());
+  }
+  return Array.from(names).sort((a, b) => b.length - a.length);
+})();
+
+/**
+ * Cherche un nom de Pokemon CONNU (present dans notre dictionnaire complet
+ * FR/EN) directement dans le titre, avec limite de mot (pas de faux positif
+ * du type "Mew" trouve a l'interieur de "Mewtwo"). Beaucoup plus fiable que
+ * la simple extraction "1ers mots non-bruit".
+ * Retourne le nom EXACT tel qu'ecrit dans le dictionnaire (utile pour la
+ * traduction FR->EN ensuite), ou null si rien de reconnu.
+ */
+function findKnownPokemonName(title) {
+  const lower = title.toLowerCase();
+  for (const name of ALL_KNOWN_NAMES) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp(`(^|[^\\p{L}])${escaped}($|[^\\p{L}])`, "iu");
+    if (regex.test(` ${lower} `)) {
+      return name;
+    }
+  }
+  return null;
+}
+
+// Detection des cartes gradees (sous coque PSA/BGS/CGC): a exclure des
+// comparaisons de prix, une carte notee valant nettement plus qu'une carte
+// brute. Detection gratuite par mots-cles, pas besoin d'IA pour ca.
+const GRADED_PATTERN = /\b(psa|bgs|cgc)\b|grad[ée]e?|note\s*\d{1,2}\s*\/\s*10/i;
+
+function detectIsGraded(title) {
+  return GRADED_PATTERN.test(title);
+}
 
 // Mapping des valeurs REELLES du champ "status" fourni par Vinted (rempli par
 // le vendeur lui-meme lors de la publication) -> tier + multiplicateur.
@@ -45,9 +88,9 @@ function extractSetNumber(title) {
 /**
  * Essaie de deviner le nom du Pokemon dans le titre, en retirant les mots-bruit
  * et le numero d'extension. Retourne le premier "bloc" de mots significatifs.
- * Heuristique simple, pas une garantie de bonne extraction.
+ * Utilise UNIQUEMENT en dernier recours si le dictionnaire ne trouve rien.
  */
-function extractCardName(title) {
+function extractCardNameFallback(title) {
   const withoutNumber = title.replace(/(\d{1,3})\s*\/\s*(\d{1,3})/, " ");
   const words = withoutNumber
     .replace(/[^\p{L}\s]/gu, " ") // enleve ponctuation/chiffres restants
@@ -57,8 +100,6 @@ function extractCardName(title) {
   const meaningful = words.filter((w) => !NOISE_WORDS.has(w.toLowerCase()));
   if (meaningful.length === 0) return null;
 
-  // On garde les 1 a 3 premiers mots significatifs comme nom candidat
-  // (la plupart des titres commencent par le nom du Pokemon).
   return meaningful.slice(0, 2).join(" ");
 }
 
@@ -100,10 +141,13 @@ function detectLanguage(title) {
 }
 
 export function analyzeTitle(title) {
+  const dictionaryMatch = findKnownPokemonName(title);
   return {
-    cardName: extractCardName(title),
+    cardName: dictionaryMatch || extractCardNameFallback(title),
+    cardNameSource: dictionaryMatch ? "dictionnaire" : "devine",
     setNumber: extractSetNumber(title),
     condition: detectCondition(title),
     language: detectLanguage(title),
+    isGraded: detectIsGraded(title),
   };
 }
