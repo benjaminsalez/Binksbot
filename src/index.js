@@ -3,6 +3,8 @@ import { searchVinted } from "./vinted.js";
 import { sendDiscordAlert } from "./discord.js";
 import { loadSeenIds, saveSeenIds } from "./storage.js";
 import { checkIfGoodDeal } from "./dealChecker.js";
+import { getAutoSessionCookie } from "./browserSession.js";
+import { rotateRailwayRegion } from "./railwayRotator.js";
 
 const {
   VINTED_DOMAIN = "vinted.fr",
@@ -12,8 +14,10 @@ const {
   VINTED_COOKIE,
   DISCORD_GIFS,
   DEAL_DEBUG,
+  AUTO_SESSION,
 } = process.env;
 
+const autoSessionEnabled = AUTO_SESSION === "true";
 const dealDebugEnabled = DEAL_DEBUG === "true";
 
 // Liste de GIFs decoratifs (optionnel). Separer plusieurs liens par des virgules.
@@ -150,6 +154,21 @@ let seenIds = loadSeenIds();
 async function checkOnce() {
   let blockedDetected = false;
 
+  // Determine le cookie a utiliser pour ce cycle: session automatique
+  // (navigateur headless) si activee, sinon le cookie manuel classique.
+  let activeCookie = VINTED_COOKIE;
+  if (autoSessionEnabled) {
+    const autoCookie = await getAutoSessionCookie();
+    if (autoCookie) {
+      activeCookie = autoCookie;
+    } else if (!VINTED_COOKIE) {
+      console.error("Session automatique indisponible et aucun VINTED_COOKIE de secours defini, cycle ignore.");
+      return true; // on remonte "bloque" pour declencher la pause progressive
+    } else {
+      console.warn("Session automatique indisponible ce cycle, repli sur VINTED_COOKIE manuel.");
+    }
+  }
+
   for (const group of groups) {
     for (const { searchText, priceMin, priceMax, excludeWords, catalogId, dealThreshold } of group.searches) {
       const priceLabel =
@@ -172,7 +191,7 @@ async function checkOnce() {
           priceMin,
           priceMax,
           catalogId,
-          cookie: VINTED_COOKIE,
+          cookie: activeCookie,
         });
 
         const items =
@@ -256,6 +275,10 @@ console.log(
 // revient a l'intervalle normal des que ca repasse. Evite de marteler Vinted
 // pendant un blocage et reduit le risque d'aggraver la detection.
 const MAX_BACKOFF_MS = 15 * 60 * 1000;
+// Apres ce nombre d'echecs consecutifs, on tente une rotation de region
+// Railway (nouvelle IP) plutot que d'attendre indefiniment sur la meme IP
+// probablement flaguee. Necessite RAILWAY_API_TOKEN/SERVICE_ID/ENVIRONMENT_ID.
+const ROTATE_AFTER_N_FAILURES = 4;
 let consecutiveBlocks = 0;
 
 async function loop() {
@@ -270,6 +293,21 @@ async function loop() {
 
   if (blocked) {
     consecutiveBlocks += 1;
+
+    if (consecutiveBlocks === ROTATE_AFTER_N_FAILURES) {
+      console.warn(
+        `${ROTATE_AFTER_N_FAILURES} echecs consecutifs, tentative de rotation de region Railway...`
+      );
+      const rotated = await rotateRailwayRegion();
+      if (rotated) {
+        // Le processus va etre tue par Railway pendant la migration, pas la
+        // peine de programmer un prochain cycle.
+        return;
+      }
+      // Si la rotation echoue (cle manquante, erreur API), on continue avec
+      // le backoff normal plutot que de rester bloque silencieusement.
+    }
+
     const backoffMs = Math.min(intervalMs * 2 ** consecutiveBlocks, MAX_BACKOFF_MS);
     console.warn(
       `Blocage detecte, pause de ${Math.round(backoffMs / 1000)}s avant la prochaine tentative (echec n°${consecutiveBlocks}).`
