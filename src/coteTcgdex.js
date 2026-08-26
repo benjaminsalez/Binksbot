@@ -17,6 +17,20 @@ async function throttle() {
   lastRequestTime = Date.now();
 }
 
+/**
+ * Normalise un numero de carte pour comparaison: retire les zeros de tete
+ * de la partie numerique (ex: "027" -> "27", "TG04" -> "TG4"), pour eviter
+ * qu'un simple zero de tete ne fasse rater une correspondance exacte alors
+ * que c'est bien la meme carte (TCGdex ne garde generalement pas les zeros
+ * de tete dans son champ localId).
+ */
+function normalizeLocalId(id) {
+  if (!id) return "";
+  const match = id.match(/^([A-Za-z]*)0*(\d+)$/);
+  if (match) return `${match[1]}${match[2]}`.toLowerCase();
+  return id.toLowerCase();
+}
+
 // Cache en memoire (1h), meme principe que les autres sources de cote.
 const CACHE_TTL_MS = 60 * 60 * 1000;
 const cache = new Map();
@@ -54,9 +68,9 @@ export async function lookupTcgdexCote(cardNameFr, setNumber, titleHint) {
     // existe dans des dizaines de sets differents) -> pas juste la premiere.
     let hasExactMatch = false;
     if (setNumber) {
-      const numberOnly = setNumber.split("/")[0];
+      const numberOnly = normalizeLocalId(setNumber.split("/")[0]);
       const exactMatches = candidates.filter(
-        (c) => c.localId?.toLowerCase() === numberOnly.toLowerCase()
+        (c) => normalizeLocalId(c.localId) === numberOnly
       );
 
       if (exactMatches.length === 1) {
