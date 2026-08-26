@@ -106,9 +106,16 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
     // souvent lisible directement sur la carte, meme si le titre Vinted ne
     // le mentionne pas clairement.
     if (item.photoUrl) {
+      console.log(`[OCR] Tentative sur "${titleGuess}"...`);
       const ocrText = await extractTextFromImage(item.photoUrl);
-      if (ocrText) {
+      if (!ocrText) {
+        console.log(`[OCR] Echec: aucun texte extrait de l'image.`);
+      } else {
+        console.log(`[OCR] Texte extrait: "${ocrText.slice(0, 100).replace(/\n/g, " ")}"`);
         const ocrAnalysis = analyzeTitle(ocrText);
+        if (!ocrAnalysis.cardName) {
+          console.log(`[OCR] Aucun nom de Pokemon reconnu dans le texte extrait.`);
+        }
         if (ocrAnalysis.cardName) {
           const ocrSetNumber = ocrAnalysis.setNumber
             ? `${ocrAnalysis.setNumber.number}/${ocrAnalysis.setNumber.setTotal || ""}`
