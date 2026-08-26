@@ -86,26 +86,44 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
   let cardmarketUrl = null;
   let ambiguous = false;
   let setName = null;
+  let ebayPriceDisplay = null;
+  let cardmarketPriceDisplay = null;
 
-  const ebayCote = await lookupEbayCote(cardName, setNumber);
+  const translatedName = translateToEnglish(cardName);
+
+  // On interroge les deux sources EN PARALLELE (pas l'une puis l'autre),
+  // pour pouvoir afficher les deux cotes independamment.
+  const [ebayCote, cardmarketCote] = await Promise.all([
+    lookupEbayCote(cardName, setNumber),
+    lookupCote(translatedName, analysis.setNumber).then(async (cote) => {
+      if (!cote && translatedName !== cardName) {
+        return lookupCote(cardName, analysis.setNumber);
+      }
+      return cote;
+    }),
+  ]);
+
   if (ebayCote) {
-    referencePrice = ebayCote.medianPrice * conditionMultiplier;
+    const ebayPrice = ebayCote.medianPrice * conditionMultiplier;
+    ebayPriceDisplay = { price: ebayPrice.toFixed(2), sampleSize: ebayCote.sampleSize };
+    referencePrice = ebayPrice;
     source = `eBay (${ebayCote.sampleSize} annonces en cours)`;
   }
 
-  if (!referencePrice) {
-    const translatedName = translateToEnglish(cardName);
-    let cote = await lookupCote(translatedName, analysis.setNumber);
-    if (!cote && translatedName !== cardName) {
-      cote = await lookupCote(cardName, analysis.setNumber);
-    }
-    if (cote) {
-      referencePrice = cote.trendPrice * conditionMultiplier;
+  if (cardmarketCote) {
+    matchedName = cardmarketCote.matchedName || matchedName;
+    cardmarketUrl = cardmarketCote.cardmarketUrl;
+    ambiguous = cardmarketCote.ambiguous;
+    setName = cardmarketCote.setName;
+
+    const cardmarketPrice = cardmarketCote.trendPrice * conditionMultiplier;
+    cardmarketPriceDisplay = { price: cardmarketPrice.toFixed(2) };
+
+    if (!referencePrice) {
+      // eBay n'a rien donne -> Cardmarket devient la reference principale
+      // pour le calcul de la remise.
+      referencePrice = cardmarketPrice;
       source = "pokemontcg.io (Cardmarket)";
-      matchedName = cote.matchedName;
-      cardmarketUrl = cote.cardmarketUrl;
-      ambiguous = cote.ambiguous;
-      setName = cote.setName;
     }
   }
 
@@ -145,6 +163,8 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
     cardmarketUrl,
     ambiguous,
     source,
+    ebayPriceDisplay,
+    cardmarketPriceDisplay,
     favouriteCount: item.favouriteCount,
     viewCount: item.viewCount,
   };
