@@ -1,7 +1,7 @@
 import { analyzeTitle, mapVintedStatus } from "./matcher.js";
-import { lookupCote } from "./cote.js";
+import { lookupTcgdexCote } from "./coteTcgdex.js";
 import { lookupEbayCote } from "./coteEbay.js";
-import { translateToEnglish, looksLikeEnglishCardName } from "./pokemonNamesFr.js";
+import { looksLikeEnglishCardName } from "./pokemonNamesFr.js";
 import { identifyCardWithAI } from "./aiCardIdentifier.js";
 
 const CONDITION_MULTIPLIERS = {
@@ -25,9 +25,9 @@ const CONDITION_MULTIPLIERS = {
  *     utilisee en complement pour affiner (variante, numero) quand
  *     disponible, mais totalement optionnelle.
  *
- * Source de la cote:
+ * Source de la cote (gratuites toutes les deux):
  *  1. eBay (annonces en cours sur eBay France, cartes gradees exclues).
- *  2. pokemontcg.io (prix Cardmarket) en secours.
+ *  2. TCGdex (prix Cardmarket, support natif du francais, pas de cle API).
  */
 export async function checkIfGoodDeal(item, thresholdPercent) {
   const titleGuess = item.title?.slice(0, 60) || "";
@@ -83,24 +83,17 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
   let referencePrice = null;
   let source = null;
   let matchedName = cardName;
-  let cardmarketUrl = null;
   let ambiguous = false;
   let setName = null;
   let ebayPriceDisplay = null;
   let cardmarketPriceDisplay = null;
 
-  const translatedName = translateToEnglish(cardName);
-
   // On interroge les deux sources EN PARALLELE (pas l'une puis l'autre),
-  // pour pouvoir afficher les deux cotes independamment.
+  // pour pouvoir afficher les deux cotes independamment. TCGdex accepte
+  // directement le nom francais, pas besoin de le traduire en anglais.
   const [ebayCote, cardmarketCote] = await Promise.all([
     lookupEbayCote(cardName, setNumber),
-    lookupCote(translatedName, analysis.setNumber).then(async (cote) => {
-      if (!cote && translatedName !== cardName) {
-        return lookupCote(cardName, analysis.setNumber);
-      }
-      return cote;
-    }),
+    lookupTcgdexCote(cardName, setNumber),
   ]);
 
   if (ebayCote) {
@@ -112,7 +105,6 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
 
   if (cardmarketCote) {
     matchedName = cardmarketCote.matchedName || matchedName;
-    cardmarketUrl = cardmarketCote.cardmarketUrl;
     ambiguous = cardmarketCote.ambiguous;
     setName = cardmarketCote.setName;
 
@@ -123,7 +115,7 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
       // eBay n'a rien donne -> Cardmarket devient la reference principale
       // pour le calcul de la remise.
       referencePrice = cardmarketPrice;
-      source = "pokemontcg.io (Cardmarket)";
+      source = "TCGdex (Cardmarket)";
     }
   }
 
@@ -160,7 +152,6 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
     conditionSource,
     identificationSource,
     language: languageDetected || "non detectee",
-    cardmarketUrl,
     ambiguous,
     source,
     ebayPriceDisplay,
