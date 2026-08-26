@@ -51,12 +51,65 @@ export async function lookupTcgdexCote(cardNameFr, setNumber) {
 
     // Si on a un numero d'extension, on essaie de trouver la carte exacte
     // parmi les candidats (plus fiable qu'un simple premier resultat).
+    let hasExactMatch = false;
     if (setNumber) {
       const numberOnly = setNumber.split("/")[0];
       const exactMatch = candidates.find(
         (c) => c.localId?.toLowerCase() === numberOnly.toLowerCase()
       );
-      if (exactMatch) candidates = [exactMatch];
+      if (exactMatch) {
+        candidates = [exactMatch];
+        hasExactMatch = true;
+      }
+    }
+
+    // Pas de numero exact trouve et plusieurs cartes possibles portent ce
+    // nom -> avant de deviner, on verifie si leurs prix sont proches (dans
+    // ce cas la devinette a peu de consequences) ou tres eloignes (dans ce
+    // cas mieux vaut refuser de se prononcer que de se tromper largement).
+    if (!hasExactMatch && candidates.length > 1) {
+      const sampleSize = Math.min(candidates.length, 4);
+      const priceChecks = await Promise.all(
+        candidates.slice(0, sampleSize).map(async (c) => {
+          try {
+            await throttle();
+            const resp = await axios.get(`${CARD_URL}/${c.id}`, { timeout: 10000 });
+            const price = resp.data?.pricing?.cardmarket?.trend;
+            return price ? { card: resp.data, price } : null;
+          } catch {
+            return null;
+          }
+        })
+      );
+
+      const valid = priceChecks.filter(Boolean);
+      if (valid.length >= 2) {
+        const prices = valid.map((v) => v.price);
+        const min = Math.min(...prices);
+        const max = Math.max(...prices);
+
+        if (max > min * 2.5) {
+          // Trop d'ecart entre les versions possibles (ex: version commune
+          // vs version rare du meme Pokemon) -> on refuse de deviner.
+          cache.set(cacheKey, { value: null, timestamp: Date.now() });
+          return null;
+        }
+
+        // Prix suffisamment proches -> on peut se permettre de prendre le
+        // premier candidat sans risque significatif d'erreur importante.
+        const best = valid[0].card;
+        const cardmarket = best.pricing.cardmarket;
+        const trendPrice = cardmarket.trend ?? cardmarket.avg30 ?? cardmarket.avg;
+        const result = {
+          matchedName: best.name,
+          setName: best.set?.name || null,
+          number: best.localId,
+          trendPrice,
+          ambiguous: true,
+        };
+        cache.set(cacheKey, { value: result, timestamp: Date.now() });
+        return result;
+      }
     }
 
     const best = candidates[0];
