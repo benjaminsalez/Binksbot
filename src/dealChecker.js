@@ -42,6 +42,13 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
   // --- Identification de la carte (gratuit, via le dictionnaire complet) ---
   const analysis = analyzeTitle(item.title || "");
 
+  // Un LOT de plusieurs cartes ne peut pas etre compare a la cote d'UNE
+  // carte -> on l'exclut d'entree, avant meme d'appeler l'IA ou de chercher
+  // une cote (evite de gaspiller des appels pour rien).
+  if (analysis.isBulkLot) {
+    return { isDeal: false, reason: "lot_detecte", titleGuess };
+  }
+
   // L'IA reste utilisable si une cle est configuree (optionnel), sinon on
   // continue tres bien sans -> aiResult vaudra simplement null.
   const aiResult = await identifyCardWithAI(item.title || "");
