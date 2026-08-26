@@ -112,7 +112,11 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
 
   if (ebayCote) {
     const ebayPrice = ebayCote.medianPrice * conditionMultiplier;
-    ebayPriceDisplay = { price: ebayPrice.toFixed(2), sampleSize: ebayCote.sampleSize };
+    ebayPriceDisplay = {
+      price: ebayPrice.toFixed(2),
+      sampleSize: ebayCote.sampleSize,
+      searchUrl: ebayCote.searchUrl,
+    };
     referencePrice = ebayPrice;
     source = `eBay (${ebayCote.sampleSize} annonces en cours)`;
   }
