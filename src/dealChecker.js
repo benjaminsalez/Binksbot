@@ -189,13 +189,16 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
     ebayPriceDisplay,
     cardmarketPriceDisplay,
     // Lien vers Cardmarket: le lien DIRECT vers la fiche exacte si
-    // pokemontcg.io a repondu (rare mais precis), sinon un lien de
-    // RECHERCHE Pokecardex par NOM SEUL. Le numero de carte casse leur
-    // moteur de recherche public (teste: "Kabutops 10/108" -> 0 resultat),
-    // contrairement a leur gestionnaire de collection interne qui l'accepte.
+    // pokemontcg.io a repondu (rare mais precis), sinon une RECHERCHE
+    // Cardmarket basee sur le TITRE COMPLET de l'annonce Vinted (pas juste
+    // le nom devine) -> plus de details (numero, set, rarete...) donnes a
+    // leur moteur de recherche, meilleure chance de tomber pres du bon
+    // resultat qu'avec le nom seul.
     cardmarketSearchUrl:
       cardmarketDirectUrl ||
-      `https://www.pokecardex.com/search?q=${encodeURIComponent(matchedName)}`,
+      `https://www.cardmarket.com/fr/Pokemon/Products/Search?searchString=${encodeURIComponent(
+        item.title || matchedName
+      )}`,
     cardmarketUrlIsExact: Boolean(cardmarketDirectUrl),
     favouriteCount: item.favouriteCount,
     viewCount: item.viewCount,
