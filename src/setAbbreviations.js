@@ -70,7 +70,7 @@ export const SET_ABBREVIATIONS = {
 
   // XY
   "XY00": "XY Bienvenue à Kalos", "KSS": "XY Bienvenue à Kalos",
-  "XY01": "XY",
+  "XY01": "XY", "XY": "XY",
   "XY02": "XY Étincelles", "FLF": "XY Étincelles",
   "XY03": "XY Poings Furieux", "FFI": "XY Poings Furieux",
   "XY04": "XY Vigueur Spectrale", "PHF": "XY Vigueur Spectrale",
