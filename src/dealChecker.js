@@ -1,8 +1,6 @@
 import { analyzeTitle, mapVintedStatus } from "./matcher.js";
 import { lookupTcgdexCote } from "./coteTcgdex.js";
-import { lookupEbayCote } from "./coteEbay.js";
-import { lookupCote } from "./cote.js";
-import { looksLikeEnglishCardName, translateToEnglish } from "./pokemonNamesFr.js";
+import { looksLikeEnglishCardName } from "./pokemonNamesFr.js";
 import { identifyCardWithAI } from "./aiCardIdentifier.js";
 
 const CONDITION_MULTIPLIERS = {
@@ -15,7 +13,7 @@ const CONDITION_MULTIPLIERS = {
 
 /**
  * Analyse une annonce et determine si c'est une bonne affaire par rapport
- * a une cote de reference, en tenant compte de l'etat detecte.
+ * a la cote TCGdex (prix Cardmarket), en tenant compte de l'etat detecte.
  * Retourne TOUJOURS un objet diagnostic, avec isDeal:true/false et une
  * raison si ce n'est pas une bonne affaire confirmee -> utile pour debug.
  *
@@ -26,9 +24,10 @@ const CONDITION_MULTIPLIERS = {
  *     utilisee en complement pour affiner (variante, numero) quand
  *     disponible, mais totalement optionnelle.
  *
- * Source de la cote (gratuites toutes les deux):
- *  1. eBay (annonces en cours sur eBay France, cartes gradees exclues).
- *  2. TCGdex (prix Cardmarket, support natif du francais, pas de cle API).
+ * Source de la cote: TCGdex uniquement (prix Cardmarket, support natif du
+ * francais, pas de cle API, gratuit et fiable). eBay et le systeme de lien
+ * Cardmarket direct ont ete abandonnes (donnees pas assez fiables/precises
+ * pour justifier la complexite).
  */
 export async function checkIfGoodDeal(item, thresholdPercent) {
   const titleGuess = item.title?.slice(0, 60) || "";
@@ -87,59 +86,15 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
   const conditionMultiplier = condition?.multiplier ?? 0.85;
   const conditionSource = vintedCondition ? "champ Vinted" : aiCondition ? "IA" : "devine depuis le titre";
 
-  // --- Recherche de cote ---
-  let referencePrice = null;
-  let source = null;
-  let matchedName = cardName;
-  let ambiguous = false;
-  let setName = null;
-  let ebayPriceDisplay = null;
-  let cardmarketPriceDisplay = null;
+  // --- Recherche de cote (TCGdex uniquement) ---
+  const cote = await lookupTcgdexCote(cardName, setNumber, item.title);
 
-  // On interroge les deux sources EN PARALLELE (pas l'une puis l'autre),
-  // pour pouvoir afficher les deux cotes independamment. TCGdex accepte
-  // directement le nom francais, pas besoin de le traduire en anglais.
-  // On tente AUSSI pokemontcg.io en best-effort, uniquement pour recuperer
-  // son lien direct vers la fiche Cardmarket exacte (TCGdex n'en fournit
-  // pas) -> on ignore completement son prix, instable/en fin de vie.
-  const translatedNameForUrl = translateToEnglish(cardName);
-  const [ebayCote, cardmarketCote, cardmarketUrlLookup] = await Promise.all([
-    lookupEbayCote(cardName, setNumber),
-    lookupTcgdexCote(cardName, setNumber, item.title),
-    lookupCote(translatedNameForUrl, analysis.setNumber).catch(() => null),
-  ]);
-  const cardmarketDirectUrl = cardmarketUrlLookup?.cardmarketUrl || null;
-
-  if (ebayCote) {
-    const ebayPrice = ebayCote.medianPrice * conditionMultiplier;
-    ebayPriceDisplay = {
-      price: ebayPrice.toFixed(2),
-      sampleSize: ebayCote.sampleSize,
-      searchUrl: ebayCote.searchUrl,
-    };
-    referencePrice = ebayPrice;
-    source = `eBay (${ebayCote.sampleSize} annonces en cours)`;
-  }
-
-  if (cardmarketCote) {
-    matchedName = cardmarketCote.matchedName || matchedName;
-    ambiguous = cardmarketCote.ambiguous;
-    setName = cardmarketCote.setName;
-
-    const cardmarketPrice = cardmarketCote.trendPrice * conditionMultiplier;
-    cardmarketPriceDisplay = { price: cardmarketPrice.toFixed(2) };
-
-    if (!referencePrice) {
-      // eBay n'a rien donne -> Cardmarket devient la reference principale
-      // pour le calcul de la remise.
-      referencePrice = cardmarketPrice;
-      source = "TCGdex (Cardmarket)";
-    }
-  }
-
-  if (!referencePrice) {
+  if (!cote) {
     return { isDeal: false, reason: "cote_introuvable", cardNameGuess: cardName, titleGuess };
   }
+
+  const referencePrice = cote.trendPrice * conditionMultiplier;
+  const matchedName = cote.matchedName || cardName;
 
   if (referencePrice <= 0 || !item.price) {
     return { isDeal: false, reason: "prix_invalide", cardNameGuess: cardName, titleGuess };
@@ -168,7 +123,6 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
       referencePrice: referencePrice.toFixed(2),
       askingPrice: item.price,
       discountPercent: Math.round(discountPercent),
-      source,
       titleGuess,
     };
   }
@@ -179,27 +133,13 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
     referencePrice: referencePrice.toFixed(2),
     cardName: matchedName,
     cardNumber: setNumber || null,
-    setName,
+    setName: cote.setName,
     condition: condition?.tier || "estimee (excellent par defaut)",
     conditionSource,
     identificationSource,
     language: languageDetected || "non detectee",
-    ambiguous,
-    source,
-    ebayPriceDisplay,
-    cardmarketPriceDisplay,
-    // Lien vers Cardmarket: le lien DIRECT vers la fiche exacte si
-    // pokemontcg.io a repondu (rare mais precis), sinon une RECHERCHE
-    // Cardmarket basee sur le TITRE COMPLET de l'annonce Vinted (pas juste
-    // le nom devine) -> plus de details (numero, set, rarete...) donnes a
-    // leur moteur de recherche, meilleure chance de tomber pres du bon
-    // resultat qu'avec le nom seul.
-    cardmarketSearchUrl:
-      cardmarketDirectUrl ||
-      `https://www.cardmarket.com/fr/Pokemon/Products/Search?searchString=${encodeURIComponent(
-        item.title || matchedName
-      )}`,
-    cardmarketUrlIsExact: Boolean(cardmarketDirectUrl),
+    ambiguous: cote.ambiguous,
+    source: "TCGdex (Cardmarket)",
     favouriteCount: item.favouriteCount,
     viewCount: item.viewCount,
   };
