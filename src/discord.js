@@ -1,23 +1,24 @@
 import axios from "axios";
 
 /**
+ * Determine la couleur de l'embed selon l'ampleur de la remise (bonne
+ * affaire) ou une couleur neutre pour une alerte classique.
+ */
+function getEmbedColor(dealInfo) {
+  if (!dealInfo) return 0xffcb05; // jaune Pokemon, alerte classique
+  if (dealInfo.discountPercent >= 70) return 0xe74c3c; // rouge, tres grosse affaire
+  if (dealInfo.discountPercent >= 50) return 0xe67e22; // orange, grosse affaire
+  return 0x2ecc71; // vert, bonne affaire
+}
+
+/**
  * Envoie une alerte au webhook Discord sous forme d'embed.
  */
 export async function sendDiscordAlert(webhookUrl, item, searchLabel, gifUrl, dealInfo) {
-  const fields = [
-    {
-      name: "Prix",
-      value: item.price ? `${item.price} ${item.currency}` : "N/A",
-      inline: true,
-    },
-    {
-      name: "Vendeur",
-      value: item.user || "inconnu",
-      inline: true,
-    },
-  ];
+  const fields = [];
 
   if (dealInfo) {
+    // Badge de remise et prix en premier, le plus visible d'un coup d'oeil.
     fields.push(
       { name: "🔥 Remise estimee", value: `-${dealInfo.discountPercent}%`, inline: true },
       { name: "Prix demande", value: `${item.price} ${item.currency}`, inline: true },
@@ -40,7 +41,6 @@ export async function sendDiscordAlert(webhookUrl, item, searchLabel, gifUrl, de
     }
 
     fields.push(
-      { name: "Carte identifiee", value: `${dealInfo.cardName}${dealInfo.setName ? ` (${dealInfo.setName})` : ""}${dealInfo.identificationSource === "IA" ? " 🤖" : ""}`, inline: false },
       { name: "Etat", value: `${dealInfo.condition}${dealInfo.conditionSource ? ` (${dealInfo.conditionSource})` : ""}`, inline: true },
       { name: "Langue supposee", value: dealInfo.language, inline: true }
     );
@@ -51,12 +51,17 @@ export async function sendDiscordAlert(webhookUrl, item, searchLabel, gifUrl, de
     if (dealInfo.favouriteCount !== null && dealInfo.favouriteCount !== undefined) {
       fields.push({ name: "❤️ Favoris", value: `${dealInfo.favouriteCount}`, inline: true });
     }
+  } else {
+    fields.push(
+      { name: "Prix", value: item.price ? `${item.price} ${item.currency}` : "N/A", inline: true },
+      { name: "Vendeur", value: item.user || "inconnu", inline: true }
+    );
   }
 
   const embed = {
-    title: item.title?.slice(0, 250) || "Nouvelle annonce Pokemon",
+    title: `${dealInfo ? `${dealInfo.cardName}${dealInfo.setName ? ` (${dealInfo.setName})` : ""}${dealInfo.identificationSource === "IA" ? " 🤖" : ""} — ` : ""}${item.title?.slice(0, 200) || "Nouvelle annonce Pokemon"}`,
     url: item.url,
-    color: dealInfo ? 0x2ecc71 : 0xffcb05, // vert si bonne affaire, jaune sinon
+    color: getEmbedColor(dealInfo),
     description: dealInfo
       ? `⚠️ Estimation automatique, a verifier avant achat. Recherche: **${searchLabel}**`
       : `Recherche: **${searchLabel}**`,
