@@ -25,6 +25,17 @@ export async function sendDiscordAlert(webhookUrl, item, searchLabel, gifUrl, de
       { name: "Source retenue", value: dealInfo.source || "inconnue", inline: true }
     );
 
+    // Ce que le bot a compris du titre -> permet de verifier d'un coup
+    // d'oeil si l'identification est correcte avant d'aller plus loin.
+    const cardLine = [
+      dealInfo.cardName,
+      dealInfo.cardNumber,
+      dealInfo.setName ? `— ${dealInfo.setName}` : null,
+    ]
+      .filter(Boolean)
+      .join(" ");
+    fields.push({ name: "🔍 Carte detectee", value: cardLine || "inconnue", inline: false });
+
     if (dealInfo.ebayPriceDisplay) {
       fields.push({
         name: "Cote eBay",
@@ -71,20 +82,31 @@ export async function sendDiscordAlert(webhookUrl, item, searchLabel, gifUrl, de
     timestamp: new Date().toISOString(),
   };
 
+  const buttons = [
+    {
+      type: 2, // button
+      style: 5, // link
+      label: "Voir l'annonce",
+      url: item.url,
+    },
+  ];
+
+  if (dealInfo?.cardmarketSearchUrl) {
+    buttons.push({
+      type: 2,
+      style: 5,
+      label: dealInfo.cardmarketUrlIsExact ? "Voir sur Cardmarket" : "Chercher sur Cardmarket",
+      url: dealInfo.cardmarketSearchUrl,
+    });
+  }
+
   await axios.post(webhookUrl, {
     username: "Vinted Pokemon Alerts",
     embeds: [embed],
     components: [
       {
         type: 1, // action row
-        components: [
-          {
-            type: 2, // button
-            style: 5, // link
-            label: "Voir l'annonce",
-            url: item.url,
-          },
-        ],
+        components: buttons,
       },
     ],
   });
