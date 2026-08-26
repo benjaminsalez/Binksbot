@@ -52,5 +52,10 @@ export async function searchVinted({ domain, searchText, priceMin, priceMax, cat
     photoUrl: item.photo?.url ?? item.photos?.[0]?.url ?? null,
     brand: item.brand_title ?? null,
     user: item.user?.login ?? "inconnu",
+    isBusiness: item.user?.business === true,
+    isPromoted: item.promoted === true,
+    vintedStatus: item.status ?? null,
+    favouriteCount: item.favourite_count ?? null,
+    viewCount: item.view_count ?? null,
   }));
 }
