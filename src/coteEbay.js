@@ -70,10 +70,10 @@ const cache = new Map();
  * estimation basee sur les annonces en cours -> a prendre comme indication,
  * pas comme verite absolue.
  */
-export async function lookupEbayCote(cardName) {
+export async function lookupEbayCote(cardName, setNumber) {
   if (!cardName) return null;
 
-  const cacheKey = cardName.toLowerCase().trim();
+  const cacheKey = `${cardName.toLowerCase().trim()}|${setNumber || ""}`;
   const cached = cache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
     return cached.value;
@@ -83,9 +83,15 @@ export async function lookupEbayCote(cardName) {
     await throttle();
     const token = await getAccessToken();
 
+    // On exclut explicitement les cartes gradees (PSA/BGS/CGC) de la
+    // comparaison: une carte notee vaut nettement plus qu'une carte brute,
+    // les melanger fausserait completement la mediane de reference.
+    const numberPart = setNumber ? ` ${setNumber}` : "";
+    const query = `pokemon ${cardName}${numberPart} carte -psa -bgs -cgc -grade -graded -note`;
+
     const response = await axios.get(SEARCH_URL, {
       params: {
-        q: `pokemon ${cardName} carte`,
+        q: query,
         limit: 20,
       },
       headers: {
@@ -116,6 +122,9 @@ export async function lookupEbayCote(cardName) {
       medianPrice: median,
       sampleSize: prices.length,
       currency: items[0]?.price?.currency || "EUR",
+      // Lien vers la recherche eBay PUBLIQUE equivalente (memes termes),
+      // pour pouvoir verifier soi-meme sur quoi se base le calcul de cote.
+      searchUrl: `https://www.ebay.fr/sch/i.html?_nkw=${encodeURIComponent(query)}`,
     };
 
     cache.set(cacheKey, { value: result, timestamp: Date.now() });
