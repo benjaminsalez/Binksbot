@@ -89,9 +89,13 @@ export function mapVintedStatus(statusText) {
 
 /**
  * Essaie d'extraire le numero "xx/yyy" (numero dans l'extension) du titre.
+ * Capture aussi un eventuel prefixe alphabetique (ex: "TG04/TG30" pour la
+ * Trainer Gallery d'Origine Perdue, "GG01" pour Galar Gallery, etc.) -
+ * essentiel pour ne pas confondre deux cartes portant le meme numero brut
+ * dans des sous-series differentes.
  */
 function extractSetNumber(title) {
-  const match = title.match(/(\d{1,3})\s*\/\s*(\d{1,3})/);
+  const match = title.match(/\b([A-Za-z]{0,3}\d{1,3})\s*\/\s*([A-Za-z]{0,3}\d{1,3})\b/);
   if (!match) return null;
   return { number: match[1], setTotal: match[2] };
 }
@@ -140,7 +144,10 @@ const LANGUAGE_KEYWORDS = {
   fr: ["fr ", "française", "francaise", "vf", "français"],
   en: ["en ", "anglaise", "anglais", "english", "vo"],
   jp: ["jap", "japonaise", "japonais", "japanese"],
-  de: ["allemande", "allemand", "german"],
+  de: ["allemande", "allemand", "german", "deutsch", "mit ", "gebraucht"],
+  it: ["con ", "italiana", "italiano", "timbro", "nuova", "nuovo", "usata", "usato", "carta pokemon"],
+  es: ["española", "espanol", "español", "nueva ", "usada", "usado", "carta pokemon"],
+  pt: ["português", "portugues", "nova ", "novo ", "usada", "usado"],
 };
 
 function detectLanguage(title) {
