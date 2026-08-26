@@ -3,6 +3,7 @@ import { lookupTcgdexCote } from "./coteTcgdex.js";
 import { looksLikeEnglishCardName } from "./pokemonNamesFr.js";
 import { identifyCardWithAI } from "./aiCardIdentifier.js";
 import { findSetAbbreviation } from "./setAbbreviations.js";
+import { extractTextFromImage } from "./ocrCardText.js";
 
 const CONDITION_MULTIPLIERS = {
   mint: 1.0,
@@ -55,18 +56,37 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
   const aiResult = await identifyCardWithAI(item.title || "");
 
   const cardName = aiResult?.pokemonName || analysis.cardName;
-  const setNumber = aiResult?.setNumber || (analysis.setNumber ? `${analysis.setNumber.number}/${analysis.setNumber.setTotal}` : null);
+  let setNumber = aiResult?.setNumber || (analysis.setNumber ? `${analysis.setNumber.number}/${analysis.setNumber.setTotal}` : null);
   const isGraded = aiResult?.isGraded ?? analysis.isGraded;
-  const identificationSource = aiResult?.pokemonName ? "IA" : analysis.cardNameSource;
+  let identificationSource = aiResult?.pokemonName ? "IA" : analysis.cardNameSource;
+  let finalCardName = cardName;
 
-  if (!cardName) {
+  // Le titre ne permet pas d'identifier la carte -> on tente l'OCR sur la
+  // photo de l'annonce (gratuit, tourne localement) avant d'abandonner:
+  // le vendeur n'a peut-etre pas su nommer sa carte, mais son nom/numero
+  // est souvent imprime lisiblement sur la carte elle-meme.
+  if (!finalCardName && item.photoUrl) {
+    const ocrText = await extractTextFromImage(item.photoUrl);
+    if (ocrText) {
+      const ocrAnalysis = analyzeTitle(ocrText);
+      if (ocrAnalysis.cardName) {
+        finalCardName = ocrAnalysis.cardName;
+        identificationSource = "OCR";
+        if (!setNumber && ocrAnalysis.setNumber) {
+          setNumber = `${ocrAnalysis.setNumber.number}/${ocrAnalysis.setNumber.setTotal || ""}`;
+        }
+      }
+    }
+  }
+
+  if (!finalCardName) {
     return { isDeal: false, reason: "nom_carte_non_extrait", titleGuess };
   }
 
   // Une carte gradee (PSA/BGS/CGC) vaut normalement bien plus qu'une carte
   // brute -> on ne peut pas la comparer a une cote de carte non-gradee.
   if (isGraded) {
-    return { isDeal: false, reason: "carte_gradee", cardNameGuess: cardName, titleGuess };
+    return { isDeal: false, reason: "carte_gradee", cardNameGuess: finalCardName, titleGuess };
   }
 
   // --- Langue ---
@@ -74,8 +94,8 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
   if (languageDetected && languageDetected !== "fr") {
     return { isDeal: false, reason: "langue_non_fr", langueDetectee: languageDetected, titleGuess };
   }
-  if (!languageDetected && looksLikeEnglishCardName(cardName)) {
-    return { isDeal: false, reason: "nom_anglais_detecte", cardNameGuess: cardName, titleGuess };
+  if (!languageDetected && looksLikeEnglishCardName(finalCardName)) {
+    return { isDeal: false, reason: "nom_anglais_detecte", cardNameGuess: finalCardName, titleGuess };
   }
 
   // --- Etat ---
@@ -95,17 +115,17 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
   const setAbbreviation = findSetAbbreviation(item.title || "");
   const titleHint = setAbbreviation ? `${item.title} ${setAbbreviation}` : item.title;
 
-  const cote = await lookupTcgdexCote(cardName, setNumber, titleHint);
+  const cote = await lookupTcgdexCote(finalCardName, setNumber, titleHint);
 
   if (!cote) {
-    return { isDeal: false, reason: "cote_introuvable", cardNameGuess: cardName, titleGuess };
+    return { isDeal: false, reason: "cote_introuvable", cardNameGuess: finalCardName, titleGuess };
   }
 
   const referencePrice = cote.trendPrice * conditionMultiplier;
-  const matchedName = cote.matchedName || cardName;
+  const matchedName = cote.matchedName || finalCardName;
 
   if (referencePrice <= 0 || !item.price) {
-    return { isDeal: false, reason: "prix_invalide", cardNameGuess: cardName, titleGuess };
+    return { isDeal: false, reason: "prix_invalide", cardNameGuess: finalCardName, titleGuess };
   }
 
   // Cartes trop peu cheres: meme avec un gros pourcentage de remise, la
