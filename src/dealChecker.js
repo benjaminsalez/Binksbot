@@ -105,7 +105,7 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
   const translatedNameForUrl = translateToEnglish(cardName);
   const [ebayCote, cardmarketCote, cardmarketUrlLookup] = await Promise.all([
     lookupEbayCote(cardName, setNumber),
-    lookupTcgdexCote(cardName, setNumber),
+    lookupTcgdexCote(cardName, setNumber, item.title),
     lookupCote(translatedNameForUrl, analysis.setNumber).catch(() => null),
   ]);
   const cardmarketDirectUrl = cardmarketUrlLookup?.cardmarketUrl || null;
