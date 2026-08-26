@@ -8,6 +8,31 @@ const NOISE_WORDS = new Set([
   "les", "a", "à", "vendre", "lot", "unique", "originale", "original", "tcg",
 ]);
 
+// Mapping des valeurs REELLES du champ "status" fourni par Vinted (rempli par
+// le vendeur lui-meme lors de la publication) -> tier + multiplicateur.
+// Beaucoup plus fiable que la detection par mots-cles dans le titre.
+const VINTED_STATUS_MAP = {
+  "neuf avec étiquette": { tier: "mint", multiplier: 1.0 },
+  "neuf avec etiquette": { tier: "mint", multiplier: 1.0 },
+  "neuf sans étiquette": { tier: "mint", multiplier: 0.95 },
+  "neuf sans etiquette": { tier: "mint", multiplier: 0.95 },
+  "très bon état": { tier: "excellent", multiplier: 0.85 },
+  "tres bon etat": { tier: "excellent", multiplier: 0.85 },
+  "bon état": { tier: "good", multiplier: 0.65 },
+  "bon etat": { tier: "good", multiplier: 0.65 },
+  "satisfaisant": { tier: "played", multiplier: 0.45 },
+};
+
+/**
+ * Traduit le champ "status" reel de Vinted (ex: "Très bon état") vers un
+ * tier + multiplicateur. Retourne null si la valeur n'est pas reconnue.
+ */
+export function mapVintedStatus(statusText) {
+  if (!statusText) return null;
+  const key = statusText.toLowerCase().trim();
+  return VINTED_STATUS_MAP[key] || null;
+}
+
 /**
  * Essaie d'extraire le numero "xx/yyy" (numero dans l'extension) du titre.
  */
