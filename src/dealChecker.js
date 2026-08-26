@@ -1,4 +1,4 @@
-import { analyzeTitle } from "./matcher.js";
+import { analyzeTitle, mapVintedStatus } from "./matcher.js";
 import { lookupCote } from "./cote.js";
 import { lookupEbayCote } from "./coteEbay.js";
 import { translateToEnglish } from "./pokemonNamesFr.js";
@@ -18,6 +18,19 @@ import { translateToEnglish } from "./pokemonNamesFr.js";
  */
 export async function checkIfGoodDeal(item, thresholdPercent) {
   const titleGuess = item.title?.slice(0, 60) || "";
+
+  // On exclut les vendeurs professionnels: ils connaissent la valeur de ce
+  // qu'ils vendent, donc rarement une vraie "erreur de prix".
+  if (item.isBusiness) {
+    return { isDeal: false, reason: "vendeur_professionnel", titleGuess };
+  }
+
+  // On exclut aussi les annonces boostees/sponsorisees (le vendeur a paye
+  // pour la mettre en avant -> optimise generalement deja son prix).
+  if (item.isPromoted) {
+    return { isDeal: false, reason: "annonce_boostee", titleGuess };
+  }
+
   const analysis = analyzeTitle(item.title || "");
 
   if (!analysis.cardName) {
@@ -39,7 +52,11 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
   let ambiguous = false;
   let setName = null;
 
-  const conditionMultiplier = analysis.condition?.multiplier ?? 0.85;
+  // On privilegie le vrai champ "etat" fourni par Vinted (rempli par le
+  // vendeur) plutot que la devinette a partir du titre, quand disponible.
+  const vintedCondition = mapVintedStatus(item.vintedStatus);
+  const condition = vintedCondition || analysis.condition;
+  const conditionMultiplier = condition?.multiplier ?? 0.85;
 
   // 1. Tentative eBay (nom en francais, marketplace France)
   const ebayCote = await lookupEbayCote(analysis.cardName);
@@ -95,10 +112,13 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
     referencePrice: referencePrice.toFixed(2),
     cardName: matchedName,
     setName,
-    condition: analysis.condition?.tier || "estimee (excellent par defaut)",
+    condition: condition?.tier || "estimee (excellent par defaut)",
+    conditionSource: vintedCondition ? "champ Vinted" : "devine depuis le titre",
     language: analysis.language || "non detectee",
     cardmarketUrl,
     ambiguous,
     source,
+    favouriteCount: item.favouriteCount,
+    viewCount: item.viewCount,
   };
 }
