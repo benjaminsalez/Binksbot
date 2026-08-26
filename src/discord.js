@@ -100,7 +100,14 @@ export async function sendDiscordAlert(webhookUrl, item, searchLabel, gifUrl, de
     });
   }
 
-  await axios.post(webhookUrl, {
+  // IMPORTANT: les webhooks Discord "classiques" (non lies a une vraie
+  // application enregistree) ignorent silencieusement le champ "components"
+  // sans la moindre erreur, sauf si ce parametre est ajoute a l'URL.
+  const webhookUrlWithComponents = webhookUrl.includes("?")
+    ? `${webhookUrl}&with_components=true`
+    : `${webhookUrl}?with_components=true`;
+
+  await axios.post(webhookUrlWithComponents, {
     username: "Vinted Pokemon Alerts",
     embeds: [embed],
     components: [
