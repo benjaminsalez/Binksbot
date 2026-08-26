@@ -61,25 +61,7 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
   let identificationSource = aiResult?.pokemonName ? "IA" : analysis.cardNameSource;
   let finalCardName = cardName;
 
-  // Le titre ne permet pas d'identifier la carte -> on tente l'OCR sur la
-  // photo de l'annonce (gratuit, tourne localement) avant d'abandonner:
-  // le vendeur n'a peut-etre pas su nommer sa carte, mais son nom/numero
-  // est souvent imprime lisiblement sur la carte elle-meme.
-  if (!finalCardName && item.photoUrl) {
-    const ocrText = await extractTextFromImage(item.photoUrl);
-    if (ocrText) {
-      const ocrAnalysis = analyzeTitle(ocrText);
-      if (ocrAnalysis.cardName) {
-        finalCardName = ocrAnalysis.cardName;
-        identificationSource = "OCR";
-        if (!setNumber && ocrAnalysis.setNumber) {
-          setNumber = `${ocrAnalysis.setNumber.number}/${ocrAnalysis.setNumber.setTotal || ""}`;
-        }
-      }
-    }
-  }
-
-  if (!finalCardName) {
+  if (!finalCardName && !item.photoUrl) {
     return { isDeal: false, reason: "nom_carte_non_extrait", titleGuess };
   }
 
@@ -118,14 +100,80 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
   const cote = await lookupTcgdexCote(finalCardName, setNumber, titleHint);
 
   if (!cote) {
+    // La cote n'a pas ete trouvee avec l'identification par titre (nom
+    // absent, mal orthographie, ou juste introuvable chez TCGdex) -> on
+    // tente l'OCR sur la photo avant d'abandonner: le nom/numero exact est
+    // souvent lisible directement sur la carte, meme si le titre Vinted ne
+    // le mentionne pas clairement.
+    if (item.photoUrl) {
+      const ocrText = await extractTextFromImage(item.photoUrl);
+      if (ocrText) {
+        const ocrAnalysis = analyzeTitle(ocrText);
+        if (ocrAnalysis.cardName) {
+          const ocrSetNumber = ocrAnalysis.setNumber
+            ? `${ocrAnalysis.setNumber.number}/${ocrAnalysis.setNumber.setTotal || ""}`
+            : null;
+          const ocrCote = await lookupTcgdexCote(ocrAnalysis.cardName, ocrSetNumber, ocrText);
+          if (ocrCote) {
+            finalCardName = ocrAnalysis.cardName;
+            setNumber = ocrSetNumber;
+            identificationSource = "OCR";
+            return finalizeDeal({
+              cote: ocrCote,
+              item,
+              conditionMultiplier,
+              condition,
+              conditionSource,
+              identificationSource,
+              languageDetected,
+              setNumber,
+              thresholdPercent,
+              titleGuess,
+            });
+          }
+        }
+      }
+    }
+
     return { isDeal: false, reason: "cote_introuvable", cardNameGuess: finalCardName, titleGuess };
   }
 
+  return finalizeDeal({
+    cote,
+    item,
+    conditionMultiplier,
+    condition,
+    conditionSource,
+    identificationSource,
+    languageDetected,
+    setNumber,
+    thresholdPercent,
+    titleGuess,
+  });
+}
+
+/**
+ * Calcule la remise finale et construit le resultat, une fois qu'une cote
+ * a ete trouvee (via le titre ou via l'OCR en secours). Factorise pour
+ * eviter de dupliquer cette logique entre les deux chemins.
+ */
+function finalizeDeal({
+  cote,
+  item,
+  conditionMultiplier,
+  condition,
+  conditionSource,
+  identificationSource,
+  languageDetected,
+  setNumber,
+  thresholdPercent,
+  titleGuess,
+}) {
   const referencePrice = cote.trendPrice * conditionMultiplier;
-  const matchedName = cote.matchedName || finalCardName;
+  const matchedName = cote.matchedName;
 
   if (referencePrice <= 0 || !item.price) {
-    return { isDeal: false, reason: "prix_invalide", cardNameGuess: finalCardName, titleGuess };
+    return { isDeal: false, reason: "prix_invalide", cardNameGuess: matchedName, titleGuess };
   }
 
   // Cartes trop peu cheres: meme avec un gros pourcentage de remise, la
