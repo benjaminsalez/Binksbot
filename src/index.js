@@ -3,7 +3,6 @@ import { searchVinted } from "./vinted.js";
 import { sendDiscordAlert } from "./discord.js";
 import { loadSeenIds, saveSeenIds } from "./storage.js";
 import { checkIfGoodDeal } from "./dealChecker.js";
-import { getAutoSessionCookie } from "./browserSession.js";
 import { rotateRailwayRegion } from "./railwayRotator.js";
 
 const {
@@ -14,10 +13,8 @@ const {
   VINTED_COOKIE,
   DISCORD_GIFS,
   DEAL_DEBUG,
-  AUTO_SESSION,
 } = process.env;
 
-const autoSessionEnabled = AUTO_SESSION === "true";
 const dealDebugEnabled = DEAL_DEBUG === "true";
 
 // Liste de GIFs decoratifs (optionnel). Separer plusieurs liens par des virgules.
@@ -153,21 +150,7 @@ let seenIds = loadSeenIds();
 
 async function checkOnce() {
   let blockedDetected = false;
-
-  // Determine le cookie a utiliser pour ce cycle: session automatique
-  // (navigateur headless) si activee, sinon le cookie manuel classique.
-  let activeCookie = VINTED_COOKIE;
-  if (autoSessionEnabled) {
-    const autoCookie = await getAutoSessionCookie();
-    if (autoCookie) {
-      activeCookie = autoCookie;
-    } else if (!VINTED_COOKIE) {
-      console.error("Session automatique indisponible et aucun VINTED_COOKIE de secours defini, cycle ignore.");
-      return true; // on remonte "bloque" pour declencher la pause progressive
-    } else {
-      console.warn("Session automatique indisponible ce cycle, repli sur VINTED_COOKIE manuel.");
-    }
-  }
+  const activeCookie = VINTED_COOKIE;
 
   for (const group of groups) {
     for (const { searchText, priceMin, priceMax, excludeWords, catalogId, dealThreshold } of group.searches) {
