@@ -38,6 +38,11 @@ export async function searchVinted({ domain, searchText, priceMin, priceMax, cat
   const response = await axios.get(url, { headers, timeout: 15000 });
   const items = response.data?.items ?? [];
 
+  if (process.env.RAW_DEBUG === "true" && items.length > 0) {
+    console.log("=== RAW_DEBUG: structure brute du 1er item ===");
+    console.log(JSON.stringify(items[0], null, 2));
+  }
+
   return items.map((item) => ({
     id: item.id,
     title: item.title,
