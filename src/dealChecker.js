@@ -3,7 +3,6 @@ import { lookupTcgdexCote } from "./coteTcgdex.js";
 import { looksLikeEnglishCardName } from "./pokemonNamesFr.js";
 import { identifyCardWithAI } from "./aiCardIdentifier.js";
 import { findSetAbbreviation } from "./setAbbreviations.js";
-import { extractTextFromImage } from "./ocrCardText.js";
 
 const CONDITION_MULTIPLIERS = {
   mint: 1.0,
@@ -19,7 +18,7 @@ const CONDITION_MULTIPLIERS = {
  * Retourne TOUJOURS un objet diagnostic, avec isDeal:true/false et une
  * raison si ce n'est pas une bonne affaire confirmee -> utile pour debug.
  *
- * Identification de la carte (100% gratuit par defaut):
+ * Identification de la carte (100% gratuit):
  *  1. Dictionnaire complet des 1025 Pokemon (FR/EN, toutes generations) ->
  *     recherche directe du nom dans le titre, fiable et sans cout.
  *  2. IA (Claude Haiku) UNIQUEMENT si ANTHROPIC_API_KEY est configuree ->
@@ -27,9 +26,7 @@ const CONDITION_MULTIPLIERS = {
  *     disponible, mais totalement optionnelle.
  *
  * Source de la cote: TCGdex uniquement (prix Cardmarket, support natif du
- * francais, pas de cle API, gratuit et fiable). eBay et le systeme de lien
- * Cardmarket direct ont ete abandonnes (donnees pas assez fiables/precises
- * pour justifier la complexite).
+ * francais, pas de cle API, gratuit et fiable).
  */
 export async function checkIfGoodDeal(item, thresholdPercent) {
   const titleGuess = item.title?.slice(0, 60) || "";
@@ -56,19 +53,18 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
   const aiResult = await identifyCardWithAI(item.title || "");
 
   const cardName = aiResult?.pokemonName || analysis.cardName;
-  let setNumber = aiResult?.setNumber || (analysis.setNumber ? `${analysis.setNumber.number}/${analysis.setNumber.setTotal}` : null);
+  const setNumber = aiResult?.setNumber || (analysis.setNumber ? `${analysis.setNumber.number}/${analysis.setNumber.setTotal}` : null);
   const isGraded = aiResult?.isGraded ?? analysis.isGraded;
-  let identificationSource = aiResult?.pokemonName ? "IA" : analysis.cardNameSource;
-  let finalCardName = cardName;
+  const identificationSource = aiResult?.pokemonName ? "IA" : analysis.cardNameSource;
 
-  if (!finalCardName && !item.photoHighResUrl) {
+  if (!cardName) {
     return { isDeal: false, reason: "nom_carte_non_extrait", titleGuess };
   }
 
   // Une carte gradee (PSA/BGS/CGC) vaut normalement bien plus qu'une carte
   // brute -> on ne peut pas la comparer a une cote de carte non-gradee.
   if (isGraded) {
-    return { isDeal: false, reason: "carte_gradee", cardNameGuess: finalCardName, titleGuess };
+    return { isDeal: false, reason: "carte_gradee", cardNameGuess: cardName, titleGuess };
   }
 
   // --- Langue ---
@@ -76,8 +72,8 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
   if (languageDetected && languageDetected !== "fr") {
     return { isDeal: false, reason: "langue_non_fr", langueDetectee: languageDetected, titleGuess };
   }
-  if (!languageDetected && looksLikeEnglishCardName(finalCardName)) {
-    return { isDeal: false, reason: "nom_anglais_detecte", cardNameGuess: finalCardName, titleGuess };
+  if (!languageDetected && looksLikeEnglishCardName(cardName)) {
+    return { isDeal: false, reason: "nom_anglais_detecte", cardNameGuess: cardName, titleGuess };
   }
 
   // --- Etat ---
@@ -97,90 +93,17 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
   const setAbbreviation = findSetAbbreviation(item.title || "");
   const titleHint = setAbbreviation ? `${item.title} ${setAbbreviation}` : item.title;
 
-  const cote = await lookupTcgdexCote(finalCardName, setNumber, titleHint);
+  const cote = await lookupTcgdexCote(cardName, setNumber, titleHint);
 
   if (!cote) {
-    // La cote n'a pas ete trouvee avec l'identification par titre (nom
-    // absent, mal orthographie, ou juste introuvable chez TCGdex) -> on
-    // tente l'OCR sur la photo avant d'abandonner: le nom/numero exact est
-    // souvent lisible directement sur la carte, meme si le titre Vinted ne
-    // le mentionne pas clairement.
-    if (item.photoHighResUrl) {
-      console.log(`[OCR] Tentative sur "${titleGuess}"...`);
-      const ocrText = await extractTextFromImage(item.photoHighResUrl);
-      if (!ocrText) {
-        console.log(`[OCR] Echec: aucun texte extrait de l'image.`);
-      } else {
-        console.log(`[OCR] Texte extrait: "${ocrText.slice(0, 100).replace(/\n/g, " ")}"`);
-        const ocrAnalysis = analyzeTitle(ocrText);
-        if (!ocrAnalysis.cardName) {
-          console.log(`[OCR] Aucun nom de Pokemon reconnu dans le texte extrait.`);
-        }
-        if (ocrAnalysis.cardName) {
-          const ocrSetNumber = ocrAnalysis.setNumber
-            ? `${ocrAnalysis.setNumber.number}/${ocrAnalysis.setNumber.setTotal || ""}`
-            : null;
-          const ocrCote = await lookupTcgdexCote(ocrAnalysis.cardName, ocrSetNumber, ocrText);
-          if (ocrCote) {
-            finalCardName = ocrAnalysis.cardName;
-            setNumber = ocrSetNumber;
-            identificationSource = "OCR";
-            return finalizeDeal({
-              cote: ocrCote,
-              item,
-              conditionMultiplier,
-              condition,
-              conditionSource,
-              identificationSource,
-              languageDetected,
-              setNumber,
-              thresholdPercent,
-              titleGuess,
-            });
-          }
-        }
-      }
-    }
-
-    return { isDeal: false, reason: "cote_introuvable", cardNameGuess: finalCardName, titleGuess };
+    return { isDeal: false, reason: "cote_introuvable", cardNameGuess: cardName, titleGuess };
   }
 
-  return finalizeDeal({
-    cote,
-    item,
-    conditionMultiplier,
-    condition,
-    conditionSource,
-    identificationSource,
-    languageDetected,
-    setNumber,
-    thresholdPercent,
-    titleGuess,
-  });
-}
-
-/**
- * Calcule la remise finale et construit le resultat, une fois qu'une cote
- * a ete trouvee (via le titre ou via l'OCR en secours). Factorise pour
- * eviter de dupliquer cette logique entre les deux chemins.
- */
-function finalizeDeal({
-  cote,
-  item,
-  conditionMultiplier,
-  condition,
-  conditionSource,
-  identificationSource,
-  languageDetected,
-  setNumber,
-  thresholdPercent,
-  titleGuess,
-}) {
   const referencePrice = cote.trendPrice * conditionMultiplier;
-  const matchedName = cote.matchedName;
+  const matchedName = cote.matchedName || cardName;
 
   if (referencePrice <= 0 || !item.price) {
-    return { isDeal: false, reason: "prix_invalide", cardNameGuess: matchedName, titleGuess };
+    return { isDeal: false, reason: "prix_invalide", cardNameGuess: cardName, titleGuess };
   }
 
   // Cartes trop peu cheres: meme avec un gros pourcentage de remise, la
