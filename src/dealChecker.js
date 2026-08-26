@@ -2,6 +2,7 @@ import { analyzeTitle, mapVintedStatus } from "./matcher.js";
 import { lookupTcgdexCote } from "./coteTcgdex.js";
 import { looksLikeEnglishCardName } from "./pokemonNamesFr.js";
 import { identifyCardWithAI } from "./aiCardIdentifier.js";
+import { findSetAbbreviation } from "./setAbbreviations.js";
 
 const CONDITION_MULTIPLIERS = {
   mint: 1.0,
@@ -87,7 +88,14 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
   const conditionSource = vintedCondition ? "champ Vinted" : aiCondition ? "IA" : "devine depuis le titre";
 
   // --- Recherche de cote (TCGdex uniquement) ---
-  const cote = await lookupTcgdexCote(cardName, setNumber, item.title);
+  // Si le titre contient une abreviation de serie connue (ex: "ME2", "ASC",
+  // "TG"), on ajoute le nom complet correspondant au signal de departage
+  // envoye a TCGdex -> aide a choisir la bonne carte quand plusieurs
+  // versions partagent le meme numero dans des series differentes.
+  const setAbbreviation = findSetAbbreviation(item.title || "");
+  const titleHint = setAbbreviation ? `${item.title} ${setAbbreviation}` : item.title;
+
+  const cote = await lookupTcgdexCote(cardName, setNumber, titleHint);
 
   if (!cote) {
     return { isDeal: false, reason: "cote_introuvable", cardNameGuess: cardName, titleGuess };
