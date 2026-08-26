@@ -106,6 +106,13 @@ function extractSetNumber(title) {
   const parenthesized = title.match(/\(\s*[A-Za-z]{2,5}\s+(\d{1,3})\s*\)/);
   if (parenthesized) return { number: parenthesized[1], setTotal: null };
 
+  // Format sans parentheses avec code de set EN MAJUSCULES, ex: "EX 055",
+  // "SWSH 045". Limite aux majuscules pour eviter de capter n'importe quel
+  // mot francais suivi d'un chiffre par erreur (les codes de set sont
+  // presque toujours ecrits en majuscules dans les titres).
+  const bareCode = title.match(/\b[A-Z]{2,5}\s+(\d{2,3})\b/);
+  if (bareCode) return { number: bareCode[1], setTotal: null };
+
   return null;
 }
 
