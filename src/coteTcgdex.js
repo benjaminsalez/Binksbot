@@ -27,7 +27,7 @@ const cache = new Map();
  * setNumber attendu au format "xx/yyy" ou juste "xx" (optionnel, affine la
  * recherche si plusieurs cartes portent le meme nom dans des sets differents).
  */
-export async function lookupTcgdexCote(cardNameFr, setNumber) {
+export async function lookupTcgdexCote(cardNameFr, setNumber, titleHint) {
   if (!cardNameFr) return null;
 
   const cacheKey = `${cardNameFr.toLowerCase().trim()}|${setNumber || ""}`;
@@ -49,17 +49,38 @@ export async function lookupTcgdexCote(cardNameFr, setNumber) {
       return null;
     }
 
-    // Si on a un numero d'extension, on essaie de trouver la carte exacte
-    // parmi les candidats (plus fiable qu'un simple premier resultat).
+    // Si on a un numero d'extension, on cherche TOUTES les cartes qui le
+    // partagent (la numerotation redemarre a chaque extension, donc "8"
+    // existe dans des dizaines de sets differents) -> pas juste la premiere.
     let hasExactMatch = false;
     if (setNumber) {
       const numberOnly = setNumber.split("/")[0];
-      const exactMatch = candidates.find(
+      const exactMatches = candidates.filter(
         (c) => c.localId?.toLowerCase() === numberOnly.toLowerCase()
       );
-      if (exactMatch) {
-        candidates = [exactMatch];
+
+      if (exactMatches.length === 1) {
+        candidates = exactMatches;
         hasExactMatch = true;
+      } else if (exactMatches.length > 1) {
+        // Plusieurs cartes partagent ce numero dans des sets differents ->
+        // on essaie de departager via le nom du set mentionne dans le titre
+        // Vinted (ex: "Team Rocket" present dans le titre).
+        let setMatch = null;
+        if (titleHint) {
+          const titleLower = titleHint.toLowerCase();
+          setMatch = exactMatches.find(
+            (c) => c.set?.name && titleLower.includes(c.set.name.toLowerCase())
+          );
+        }
+        if (setMatch) {
+          candidates = [setMatch];
+          hasExactMatch = true;
+        } else {
+          // Toujours ambigu -> on laisse le controle d'ecart de prix
+          // ci-dessous decider si deviner reste raisonnable.
+          candidates = exactMatches;
+        }
       }
     }
 
