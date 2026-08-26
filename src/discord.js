@@ -91,6 +91,15 @@ export async function sendDiscordAlert(webhookUrl, item, searchLabel, gifUrl, de
     },
   ];
 
+  if (dealInfo?.ebayPriceDisplay?.searchUrl) {
+    buttons.push({
+      type: 2,
+      style: 5,
+      label: "Voir sur eBay",
+      url: dealInfo.ebayPriceDisplay.searchUrl,
+    });
+  }
+
   if (dealInfo?.cardmarketSearchUrl) {
     buttons.push({
       type: 2,
