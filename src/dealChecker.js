@@ -1,7 +1,16 @@
 import { analyzeTitle, mapVintedStatus } from "./matcher.js";
 import { lookupCote } from "./cote.js";
 import { lookupEbayCote } from "./coteEbay.js";
-import { translateToEnglish } from "./pokemonNamesFr.js";
+import { translateToEnglish, looksLikeEnglishCardName } from "./pokemonNamesFr.js";
+import { identifyCardWithAI } from "./aiCardIdentifier.js";
+
+const CONDITION_MULTIPLIERS = {
+  mint: 1.0,
+  excellent: 0.85,
+  good: 0.65,
+  played: 0.45,
+  poor: 0.3,
+};
 
 /**
  * Analyse une annonce et determine si c'est une bonne affaire par rapport
@@ -9,69 +18,86 @@ import { translateToEnglish } from "./pokemonNamesFr.js";
  * Retourne TOUJOURS un objet diagnostic, avec isDeal:true/false et une
  * raison si ce n'est pas une bonne affaire confirmee -> utile pour debug.
  *
+ * Identification de la carte (100% gratuit par defaut):
+ *  1. Dictionnaire complet des 1025 Pokemon (FR/EN, toutes generations) ->
+ *     recherche directe du nom dans le titre, fiable et sans cout.
+ *  2. IA (Claude Haiku) UNIQUEMENT si ANTHROPIC_API_KEY est configuree ->
+ *     utilisee en complement pour affiner (variante, numero) quand
+ *     disponible, mais totalement optionnelle.
+ *
  * Source de la cote:
- *  1. eBay (annonces en cours sur eBay France, marketplace EBAY_FR) -> prix
- *     median, plus proche du marche francais reel, mais PAS un historique
- *     de ventes reelles (limite d'acces API), juste des annonces en cours.
- *  2. pokemontcg.io (prix Cardmarket) en secours si eBay ne donne rien ou
- *     si les cles EBAY_CLIENT_ID/EBAY_CLIENT_SECRET ne sont pas configurees.
+ *  1. eBay (annonces en cours sur eBay France, cartes gradees exclues).
+ *  2. pokemontcg.io (prix Cardmarket) en secours.
  */
 export async function checkIfGoodDeal(item, thresholdPercent) {
   const titleGuess = item.title?.slice(0, 60) || "";
 
-  // On exclut les vendeurs professionnels: ils connaissent la valeur de ce
-  // qu'ils vendent, donc rarement une vraie "erreur de prix".
   if (item.isBusiness) {
     return { isDeal: false, reason: "vendeur_professionnel", titleGuess };
   }
-
-  // On exclut aussi les annonces boostees/sponsorisees (le vendeur a paye
-  // pour la mettre en avant -> optimise generalement deja son prix).
   if (item.isPromoted) {
     return { isDeal: false, reason: "annonce_boostee", titleGuess };
   }
 
+  // --- Identification de la carte (gratuit, via le dictionnaire complet) ---
   const analysis = analyzeTitle(item.title || "");
 
-  if (!analysis.cardName) {
+  // L'IA reste utilisable si une cle est configuree (optionnel), sinon on
+  // continue tres bien sans -> aiResult vaudra simplement null.
+  const aiResult = await identifyCardWithAI(item.title || "");
+
+  const cardName = aiResult?.pokemonName || analysis.cardName;
+  const setNumber = aiResult?.setNumber || (analysis.setNumber ? `${analysis.setNumber.number}/${analysis.setNumber.setTotal}` : null);
+  const isGraded = aiResult?.isGraded ?? analysis.isGraded;
+  const identificationSource = aiResult?.pokemonName ? "IA" : analysis.cardNameSource;
+
+  if (!cardName) {
     return { isDeal: false, reason: "nom_carte_non_extrait", titleGuess };
   }
 
-  // On exclut les annonces explicitement dans une autre langue que le
-  // francais (le titre mentionne "EN", "anglais", "jap", "allemande"...).
-  // Si la langue n'est pas precisee du tout, on part du principe qu'elle
-  // est francaise par defaut (site vinted.fr).
-  if (analysis.language && analysis.language !== "fr") {
-    return { isDeal: false, reason: "langue_non_fr", langueDetectee: analysis.language, titleGuess };
+  // Une carte gradee (PSA/BGS/CGC) vaut normalement bien plus qu'une carte
+  // brute -> on ne peut pas la comparer a une cote de carte non-gradee.
+  if (isGraded) {
+    return { isDeal: false, reason: "carte_gradee", cardNameGuess: cardName, titleGuess };
   }
 
+  // --- Langue ---
+  const languageDetected = aiResult?.language || analysis.language;
+  if (languageDetected && languageDetected !== "fr") {
+    return { isDeal: false, reason: "langue_non_fr", langueDetectee: languageDetected, titleGuess };
+  }
+  if (!languageDetected && looksLikeEnglishCardName(cardName)) {
+    return { isDeal: false, reason: "nom_anglais_detecte", cardNameGuess: cardName, titleGuess };
+  }
+
+  // --- Etat ---
+  const vintedCondition = mapVintedStatus(item.vintedStatus);
+  const aiCondition = aiResult?.conditionGuess
+    ? { tier: aiResult.conditionGuess, multiplier: CONDITION_MULTIPLIERS[aiResult.conditionGuess] }
+    : null;
+  const condition = vintedCondition || aiCondition || analysis.condition;
+  const conditionMultiplier = condition?.multiplier ?? 0.85;
+  const conditionSource = vintedCondition ? "champ Vinted" : aiCondition ? "IA" : "devine depuis le titre";
+
+  // --- Recherche de cote ---
   let referencePrice = null;
   let source = null;
-  let matchedName = analysis.cardName;
+  let matchedName = cardName;
   let cardmarketUrl = null;
   let ambiguous = false;
   let setName = null;
 
-  // On privilegie le vrai champ "etat" fourni par Vinted (rempli par le
-  // vendeur) plutot que la devinette a partir du titre, quand disponible.
-  const vintedCondition = mapVintedStatus(item.vintedStatus);
-  const condition = vintedCondition || analysis.condition;
-  const conditionMultiplier = condition?.multiplier ?? 0.85;
-
-  // 1. Tentative eBay (nom en francais, marketplace France)
-  const ebayCote = await lookupEbayCote(analysis.cardName);
+  const ebayCote = await lookupEbayCote(cardName, setNumber);
   if (ebayCote) {
     referencePrice = ebayCote.medianPrice * conditionMultiplier;
     source = `eBay (${ebayCote.sampleSize} annonces en cours)`;
-    matchedName = analysis.cardName;
   }
 
-  // 2. Secours: pokemontcg.io (nom traduit en anglais)
   if (!referencePrice) {
-    const translatedName = translateToEnglish(analysis.cardName);
+    const translatedName = translateToEnglish(cardName);
     let cote = await lookupCote(translatedName, analysis.setNumber);
-    if (!cote && translatedName !== analysis.cardName) {
-      cote = await lookupCote(analysis.cardName, analysis.setNumber);
+    if (!cote && translatedName !== cardName) {
+      cote = await lookupCote(cardName, analysis.setNumber);
     }
     if (cote) {
       referencePrice = cote.trendPrice * conditionMultiplier;
@@ -84,11 +110,11 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
   }
 
   if (!referencePrice) {
-    return { isDeal: false, reason: "cote_introuvable", cardNameGuess: analysis.cardName, titleGuess };
+    return { isDeal: false, reason: "cote_introuvable", cardNameGuess: cardName, titleGuess };
   }
 
   if (referencePrice <= 0 || !item.price) {
-    return { isDeal: false, reason: "prix_invalide", cardNameGuess: analysis.cardName, titleGuess };
+    return { isDeal: false, reason: "prix_invalide", cardNameGuess: cardName, titleGuess };
   }
 
   const discountPercent = ((referencePrice - item.price) / referencePrice) * 100;
@@ -113,8 +139,9 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
     cardName: matchedName,
     setName,
     condition: condition?.tier || "estimee (excellent par defaut)",
-    conditionSource: vintedCondition ? "champ Vinted" : "devine depuis le titre",
-    language: analysis.language || "non detectee",
+    conditionSource,
+    identificationSource,
+    language: languageDetected || "non detectee",
     cardmarketUrl,
     ambiguous,
     source,
