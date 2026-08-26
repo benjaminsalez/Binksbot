@@ -44,8 +44,9 @@ function findKnownPokemonName(title) {
 
 // Detection des cartes gradees (sous coque PSA/BGS/CGC): a exclure des
 // comparaisons de prix, une carte notee valant nettement plus qu'une carte
-// brute. Detection gratuite par mots-cles, pas besoin d'IA pour ca.
-const GRADED_PATTERN = /\b(psa|bgs|cgc)\b|grad[ée]e?|note\s*\d{1,2}\s*\/\s*10/i;
+// brute. "grad\w*" capte toutes les variantes: grade, gradee, graded,
+// grading, gradata (italien), etc. Detection gratuite, pas besoin d'IA.
+const GRADED_PATTERN = /\b(psa|bgs|cgc)\b|\bgrad\w*\b|note\s*\d{1,2}\s*\/\s*10/i;
 
 function detectIsGraded(title) {
   return GRADED_PATTERN.test(title);
