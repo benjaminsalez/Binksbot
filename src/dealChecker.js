@@ -61,7 +61,7 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
   let identificationSource = aiResult?.pokemonName ? "IA" : analysis.cardNameSource;
   let finalCardName = cardName;
 
-  if (!finalCardName && !item.photoUrl) {
+  if (!finalCardName && !item.photoHighResUrl) {
     return { isDeal: false, reason: "nom_carte_non_extrait", titleGuess };
   }
 
@@ -105,9 +105,9 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
     // tente l'OCR sur la photo avant d'abandonner: le nom/numero exact est
     // souvent lisible directement sur la carte, meme si le titre Vinted ne
     // le mentionne pas clairement.
-    if (item.photoUrl) {
+    if (item.photoHighResUrl) {
       console.log(`[OCR] Tentative sur "${titleGuess}"...`);
-      const ocrText = await extractTextFromImage(item.photoUrl);
+      const ocrText = await extractTextFromImage(item.photoHighResUrl);
       if (!ocrText) {
         console.log(`[OCR] Echec: aucun texte extrait de l'image.`);
       } else {
