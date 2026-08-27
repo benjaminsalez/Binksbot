@@ -1,8 +1,9 @@
 import { analyzeTitle, mapVintedStatus } from "./matcher.js";
 import { lookupTcgdexCote } from "./coteTcgdex.js";
-import { looksLikeEnglishCardName } from "./pokemonNamesFr.js";
+import { looksLikeEnglishCardName, translateToFrench } from "./pokemonNamesFr.js";
 import { identifyCardWithAI } from "./aiCardIdentifier.js";
 import { findSetAbbreviation } from "./setAbbreviations.js";
+import { scanCardImage } from "./tcgTrackingScan.js";
 
 const CONDITION_MULTIPLIERS = {
   mint: 1.0,
@@ -13,20 +14,32 @@ const CONDITION_MULTIPLIERS = {
 };
 
 /**
+ * Extrait au mieux un nom/numero/serie depuis la reponse produit
+ * TCGTracking (forme exacte pas totalement documentee, extraction
+ * defensive avec plusieurs chemins possibles).
+ */
+function extractFromTcgTrackingProduct(product) {
+  const name = product?.name || product?.card_name || null;
+  const number = product?.number || product?.collector_number || null;
+  const setName = product?.set_name || product?.expansion || null;
+  return { name, number, setName };
+}
+
+/**
  * Analyse une annonce et determine si c'est une bonne affaire par rapport
  * a la cote TCGdex (prix Cardmarket), en tenant compte de l'etat detecte.
  * Retourne TOUJOURS un objet diagnostic, avec isDeal:true/false et une
  * raison si ce n'est pas une bonne affaire confirmee -> utile pour debug.
  *
- * Identification de la carte (100% gratuit):
+ * Identification de la carte (gratuit):
  *  1. Dictionnaire complet des 1025 Pokemon (FR/EN, toutes generations) ->
  *     recherche directe du nom dans le titre, fiable et sans cout.
- *  2. IA (Claude Haiku) UNIQUEMENT si ANTHROPIC_API_KEY est configuree ->
- *     utilisee en complement pour affiner (variante, numero) quand
- *     disponible, mais totalement optionnelle.
+ *  2. IA (Claude Haiku) UNIQUEMENT si ANTHROPIC_API_KEY est configuree.
+ *  3. Scan d'image TCGTracking en dernier secours si le titre ne suffit
+ *     pas -> compare la photo a leur base de cartes (gratuit pour le
+ *     moment, endpoint annonce comme devant fermer fin sept. 2026).
  *
- * Source de la cote: TCGdex uniquement (prix Cardmarket, support natif du
- * francais, pas de cle API, gratuit et fiable).
+ * Source de la cote: TCGdex uniquement (prix Cardmarket, gratuit, fiable).
  */
 export async function checkIfGoodDeal(item, thresholdPercent) {
   const titleGuess = item.title?.slice(0, 60) || "";
@@ -42,14 +55,11 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
   const analysis = analyzeTitle(item.title || "");
 
   // Un LOT de plusieurs cartes ne peut pas etre compare a la cote d'UNE
-  // carte -> on l'exclut d'entree, avant meme d'appeler l'IA ou de chercher
-  // une cote (evite de gaspiller des appels pour rien).
+  // carte -> on l'exclut d'entree.
   if (analysis.isBulkLot) {
     return { isDeal: false, reason: "lot_detecte", titleGuess };
   }
 
-  // L'IA reste utilisable si une cle est configuree (optionnel), sinon on
-  // continue tres bien sans -> aiResult vaudra simplement null.
   const aiResult = await identifyCardWithAI(item.title || "");
 
   const cardName = aiResult?.pokemonName || analysis.cardName;
@@ -57,12 +67,10 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
   const isGraded = aiResult?.isGraded ?? analysis.isGraded;
   const identificationSource = aiResult?.pokemonName ? "IA" : analysis.cardNameSource;
 
-  if (!cardName) {
+  if (!cardName && !item.photoHighResUrl) {
     return { isDeal: false, reason: "nom_carte_non_extrait", titleGuess };
   }
 
-  // Une carte gradee (PSA/BGS/CGC) vaut normalement bien plus qu'une carte
-  // brute -> on ne peut pas la comparer a une cote de carte non-gradee.
   if (isGraded) {
     return { isDeal: false, reason: "carte_gradee", cardNameGuess: cardName, titleGuess };
   }
@@ -72,7 +80,7 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
   if (languageDetected && languageDetected !== "fr") {
     return { isDeal: false, reason: "langue_non_fr", langueDetectee: languageDetected, titleGuess };
   }
-  if (!languageDetected && looksLikeEnglishCardName(cardName)) {
+  if (!languageDetected && cardName && looksLikeEnglishCardName(cardName)) {
     return { isDeal: false, reason: "nom_anglais_detecte", cardNameGuess: cardName, titleGuess };
   }
 
@@ -85,15 +93,29 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
   const conditionMultiplier = condition?.multiplier ?? 0.85;
   const conditionSource = vintedCondition ? "champ Vinted" : aiCondition ? "IA" : "devine depuis le titre";
 
-  // --- Recherche de cote (TCGdex uniquement) ---
-  // Si le titre contient une abreviation de serie connue (ex: "ME2", "ASC",
-  // "TG"), on ajoute le nom complet correspondant au signal de departage
-  // envoye a TCGdex -> aide a choisir la bonne carte quand plusieurs
-  // versions partagent le meme numero dans des series differentes.
+  // --- Recherche de cote (TCGdex) ---
   const setAbbreviation = findSetAbbreviation(item.title || "");
   const titleHint = setAbbreviation ? `${item.title} ${setAbbreviation}` : item.title;
 
-  const cote = await lookupTcgdexCote(cardName, setNumber, titleHint);
+  let cote = cardName ? await lookupTcgdexCote(cardName, setNumber, titleHint) : null;
+  let finalIdentificationSource = identificationSource;
+
+  // Si l'identification par titre echoue (nom absent ou cote introuvable),
+  // on tente le scan d'image en dernier recours avant d'abandonner.
+  if (!cote && item.photoHighResUrl) {
+    const scanResult = await scanCardImage(item.photoHighResUrl);
+    if (scanResult) {
+      const extracted = extractFromTcgTrackingProduct(scanResult.product);
+      if (extracted.name) {
+        const nameForTcgdex = translateToFrench(extracted.name);
+        const scanCote = await lookupTcgdexCote(nameForTcgdex, extracted.number, item.title);
+        if (scanCote) {
+          cote = scanCote;
+          finalIdentificationSource = `scan image (${scanResult.score}%)`;
+        }
+      }
+    }
+  }
 
   if (!cote) {
     return { isDeal: false, reason: "cote_introuvable", cardNameGuess: cardName, titleGuess };
@@ -103,12 +125,9 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
   const matchedName = cote.matchedName || cardName;
 
   if (referencePrice <= 0 || !item.price) {
-    return { isDeal: false, reason: "prix_invalide", cardNameGuess: cardName, titleGuess };
+    return { isDeal: false, reason: "prix_invalide", cardNameGuess: matchedName, titleGuess };
   }
 
-  // Cartes trop peu cheres: meme avec un gros pourcentage de remise, la
-  // marge absolue est negligeable et le risque de mauvaise identification
-  // pese proportionnellement plus lourd -> pas interessant a signaler.
   if (referencePrice < 5) {
     return {
       isDeal: false,
@@ -142,7 +161,7 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
     setName: cote.setName,
     condition: condition?.tier || "estimee (excellent par defaut)",
     conditionSource,
-    identificationSource,
+    identificationSource: finalIdentificationSource,
     language: languageDetected || "non detectee",
     ambiguous: cote.ambiguous,
     source: "TCGdex (Cardmarket)",
