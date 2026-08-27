@@ -83,7 +83,7 @@ export async function scanCardImage(imageUrl) {
     const best = results[0];
     console.log(`[TCGTracking] Meilleur candidat: product_id=${best.product_id}, score=${best.score}`);
 
-    if (best.score < 60) {
+    if (best.score < 25) {
       console.log(`[TCGTracking] Score trop faible (${best.score}), resultat ignore.`);
       return null;
     }
