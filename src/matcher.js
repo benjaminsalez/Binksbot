@@ -115,7 +115,7 @@ function extractSetNumber(title) {
   if (noTotal) return { number: noTotal[1], setTotal: null };
 
   // Format entre parentheses avec code de set, ex: "(ASC 057)", "(SWSH 045)"
-  const parenthesized = title.match(/\(\s*[A-Za-z]{2,5}\s+(\d{1,3})\s*\)/);
+  const parenthesized = title.match(/\(\s*[A-Za-z]{2,6}\s+([A-Za-z]{0,3}\d{1,3})\s*\)/);
   if (parenthesized) return { number: parenthesized[1], setTotal: null };
 
   // Format "code de set connu + numero", CASSE IGNOREE (ex: "palkia xy 75",
