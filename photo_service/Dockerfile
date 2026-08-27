@@ -4,6 +4,14 @@ FROM python:3.12-slim
 # rencontre avec Pokeum le 27/08 -> plus besoin de bidouiller le CMD pour ca).
 ENV PYTHONUNBUFFERED=1
 
+# Librairies systeme necessaires a OpenCV, meme en version headless (meme
+# souci rencontre avec Pokeum -> meme correctif applique directement ici).
+RUN apt-get update && apt-get install -y \
+    libgl1 \
+    libglib2.0-0 \
+    --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY requirements.txt .
