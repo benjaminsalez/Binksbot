@@ -1,9 +1,8 @@
 import { analyzeTitle, mapVintedStatus } from "./matcher.js";
 import { lookupTcgdexCote } from "./coteTcgdex.js";
-import { looksLikeEnglishCardName, translateToFrench } from "./pokemonNamesFr.js";
+import { looksLikeEnglishCardName } from "./pokemonNamesFr.js";
 import { identifyCardWithAI } from "./aiCardIdentifier.js";
 import { findSetAbbreviation } from "./setAbbreviations.js";
-import { scanCardImages } from "./tcgTrackingScan.js";
 
 const CONDITION_MULTIPLIERS = {
   mint: 1.0,
@@ -23,9 +22,6 @@ const CONDITION_MULTIPLIERS = {
  *  1. Dictionnaire complet des 1025 Pokemon (FR/EN, toutes generations) ->
  *     recherche directe du nom dans le titre, fiable et sans cout.
  *  2. IA (Claude Haiku) UNIQUEMENT si ANTHROPIC_API_KEY est configuree.
- *  3. Scan d'image TCGTracking en dernier secours si le titre ne suffit
- *     pas -> compare la photo a leur base de cartes (gratuit pour le
- *     moment, endpoint annonce comme devant fermer fin sept. 2026).
  *
  * Source de la cote: TCGdex uniquement (prix Cardmarket, gratuit, fiable).
  */
@@ -55,7 +51,7 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
   const isGraded = aiResult?.isGraded ?? analysis.isGraded;
   const identificationSource = aiResult?.pokemonName ? "IA" : analysis.cardNameSource;
 
-  if (!cardName && (!item.photoHighResUrls || item.photoHighResUrls.length === 0)) {
+  if (!cardName) {
     return { isDeal: false, reason: "nom_carte_non_extrait", titleGuess };
   }
 
@@ -68,7 +64,7 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
   if (languageDetected && languageDetected !== "fr") {
     return { isDeal: false, reason: "langue_non_fr", langueDetectee: languageDetected, titleGuess };
   }
-  if (!languageDetected && cardName && looksLikeEnglishCardName(cardName)) {
+  if (!languageDetected && looksLikeEnglishCardName(cardName)) {
     return { isDeal: false, reason: "nom_anglais_detecte", cardNameGuess: cardName, titleGuess };
   }
 
@@ -85,22 +81,7 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
   const setAbbreviation = findSetAbbreviation(item.title || "");
   const titleHint = setAbbreviation ? `${item.title} ${setAbbreviation}` : item.title;
 
-  let cote = cardName ? await lookupTcgdexCote(cardName, setNumber, titleHint) : null;
-  let finalIdentificationSource = identificationSource;
-
-  // Si l'identification par titre echoue (nom absent ou cote introuvable),
-  // on tente le scan d'image en dernier recours avant d'abandonner.
-  if (!cote && item.photoHighResUrls && item.photoHighResUrls.length > 0) {
-    const scanResult = await scanCardImages(item.photoHighResUrls);
-    if (scanResult?.cardName) {
-      const nameForTcgdex = translateToFrench(scanResult.cardName);
-      const scanCote = await lookupTcgdexCote(nameForTcgdex, scanResult.setNumber, item.title);
-      if (scanCote) {
-        cote = scanCote;
-        finalIdentificationSource = `scan image (${scanResult.score}%)`;
-      }
-    }
-  }
+  const cote = await lookupTcgdexCote(cardName, setNumber, titleHint);
 
   if (!cote) {
     return { isDeal: false, reason: "cote_introuvable", cardNameGuess: cardName, titleGuess };
@@ -163,7 +144,7 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
     setName: cote.setName,
     condition: condition?.tier || "estimee (excellent par defaut)",
     conditionSource,
-    identificationSource: finalIdentificationSource,
+    identificationSource,
     language: languageDetected || "non detectee",
     ambiguous: cote.ambiguous,
     source: "TCGdex (Cardmarket)",
