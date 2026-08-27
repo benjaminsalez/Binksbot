@@ -1,5 +1,6 @@
 import axios from "axios";
 import Jimp from "jimp";
+import { analyzeTitle } from "./matcher.js";
 
 const SCAN_URL = "https://tcgtracking.com/tcgapi/v1/scan";
 const PRODUCT_URL = "https://tcgtracking.com/tcgapi/v1/products";
@@ -90,14 +91,35 @@ export async function scanCardImage(imageUrl) {
 
     await throttle();
     const productResponse = await axios.get(`${PRODUCT_URL}/${best.product_id}`, { timeout: 15000 });
-    const product = productResponse.data;
+    // La vraie donnee est imbriquee dans un champ "product", pas a la racine.
+    const product = productResponse.data?.product;
 
-    // Log de diagnostic: la forme exacte de cette reponse n'est pas
-    // documentee en detail, on log un extrait pour pouvoir affiner
-    // l'extraction des champs si besoin.
+    if (!product) {
+      console.log("[TCGTracking] Reponse produit inattendue, aucune donnee exploitable.");
+      return null;
+    }
+
     console.log(`[TCGTracking] Produit recupere:`, JSON.stringify(product).slice(0, 400));
 
-    return { product, score: best.score };
+    // On reutilise notre systeme d'extraction deja eprouve (celui qui
+    // marche sur les titres Vinted) plutot que d'ecrire un nouveau parseur:
+    // le nom TCGPlayer inclut souvent le numero colle dedans (ex: "Iono's
+    // Bellibolt ex - 194"), et search_blob contient en plus le nom de serie.
+    const combinedText = `${product.name || ""} ${product.search_blob || ""}`;
+    const extracted = analyzeTitle(combinedText);
+
+    if (!extracted.cardName) {
+      console.log("[TCGTracking] Aucun nom de Pokemon reconnu dans le produit recupere.");
+      return null;
+    }
+
+    return {
+      cardName: extracted.cardName,
+      setNumber: extracted.setNumber
+        ? `${extracted.setNumber.number}/${extracted.setNumber.setTotal || ""}`
+        : null,
+      score: best.score,
+    };
   } catch (err) {
     console.error("[TCGTracking] Erreur:", err.response?.data?.error || err.message);
     return null;
