@@ -3,7 +3,7 @@ import { lookupTcgdexCote } from "./coteTcgdex.js";
 import { looksLikeEnglishCardName, translateToFrench } from "./pokemonNamesFr.js";
 import { identifyCardWithAI } from "./aiCardIdentifier.js";
 import { findSetAbbreviation } from "./setAbbreviations.js";
-import { scanCardImage } from "./tcgTrackingScan.js";
+import { scanCardImages } from "./tcgTrackingScan.js";
 
 const CONDITION_MULTIPLIERS = {
   mint: 1.0,
@@ -55,7 +55,7 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
   const isGraded = aiResult?.isGraded ?? analysis.isGraded;
   const identificationSource = aiResult?.pokemonName ? "IA" : analysis.cardNameSource;
 
-  if (!cardName && !item.photoHighResUrl) {
+  if (!cardName && (!item.photoHighResUrls || item.photoHighResUrls.length === 0)) {
     return { isDeal: false, reason: "nom_carte_non_extrait", titleGuess };
   }
 
@@ -90,8 +90,8 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
 
   // Si l'identification par titre echoue (nom absent ou cote introuvable),
   // on tente le scan d'image en dernier recours avant d'abandonner.
-  if (!cote && item.photoHighResUrl) {
-    const scanResult = await scanCardImage(item.photoHighResUrl);
+  if (!cote && item.photoHighResUrls && item.photoHighResUrls.length > 0) {
+    const scanResult = await scanCardImages(item.photoHighResUrls);
     if (scanResult?.cardName) {
       const nameForTcgdex = translateToFrench(scanResult.cardName);
       const scanCote = await lookupTcgdexCote(nameForTcgdex, scanResult.setNumber, item.title);
