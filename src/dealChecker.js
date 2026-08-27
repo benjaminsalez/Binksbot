@@ -125,6 +125,23 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
 
   const discountPercent = ((referencePrice - item.price) / referencePrice) * 100;
 
+  // Une remise "trop belle pour etre vraie" (>85%) est un signal d'alarme
+  // plutot qu'une bonne nouvelle: c'est le signe le plus probable d'une
+  // MAUVAISE identification (mauvaise carte comparee a la mauvaise cote)
+  // plutot qu'une vraie pepite. On prefere rater une remise extreme reelle
+  // (tres rare) que risquer d'induire un achat sur une fausse alerte.
+  if (discountPercent > 85) {
+    return {
+      isDeal: false,
+      reason: "remise_suspecte",
+      cardNameGuess: matchedName,
+      referencePrice: referencePrice.toFixed(2),
+      askingPrice: item.price,
+      discountPercent: Math.round(discountPercent),
+      titleGuess,
+    };
+  }
+
   if (discountPercent < thresholdPercent) {
     return {
       isDeal: false,
