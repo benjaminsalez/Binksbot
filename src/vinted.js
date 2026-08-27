@@ -50,9 +50,8 @@ export async function searchVinted({ domain, searchText, priceMin, priceMax, cat
     currency: item.price?.currency_code ?? "EUR",
     url: item.url,
     photoUrl: item.photo?.url ?? item.photos?.[0]?.url ?? null,
-    // Version haute resolution de la photo, utilisee specifiquement pour
-    // l'OCR (la miniature normale est trop petite/floue pour lire du texte
-    // dessus correctement).
+    // Version haute resolution de la photo (la premiere), utilisee pour
+    // l'OCR/le scan d'image -> la miniature normale est trop petite/floue.
     photoHighResUrl:
       item.photo?.full_size_url ??
       item.photo?.high_resolution?.url ??
@@ -60,6 +59,13 @@ export async function searchVinted({ domain, searchText, priceMin, priceMax, cat
       item.photos?.[0]?.high_resolution?.url ??
       item.photo?.url ??
       null,
+    // Jusqu'a 3 photos haute resolution de l'annonce (pas juste la
+    // premiere) -> utile pour le scan d'image, une photo differente peut
+    // etre mieux cadree/eclairee que la premiere.
+    photoHighResUrls: (item.photos || [])
+      .slice(0, 3)
+      .map((p) => p.full_size_url ?? p.high_resolution?.url ?? p.url)
+      .filter(Boolean),
     brand: item.brand_title ?? null,
     user: item.user?.login ?? "inconnu",
     isBusiness: item.user?.business === true,
