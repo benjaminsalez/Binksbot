@@ -182,7 +182,7 @@ function detectCondition(title) {
 const LANGUAGE_KEYWORDS = {
   fr: ["fr ", "française", "francaise", "vf", "français"],
   en: ["en ", "anglaise", "anglais", "english", "vo"],
-  jp: ["jap", "japonaise", "japonais", "japanese"],
+  jp: ["jap", "japonaise", "japonais", "japanese", "giapponese", "giapponesi"],
   de: ["allemande", "allemand", "german", "deutsch", "mit ", "gebraucht", "karmesin", "purpur"],
   it: ["con ", "italiana", "italiano", "timbro", "nuova", "nuovo", "usata", "usato", "carta pokemon", "scarlatto", "violetto", "terastal"],
   es: ["española", "espanol", "español", "nueva ", "usada", "usado", "carta pokemon", "cartas pokemon", "cartas ", "escarlata", "purpura", "púrpura"],
