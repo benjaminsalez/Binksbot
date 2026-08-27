@@ -1039,6 +1039,23 @@ export function translateToEnglish(guessedName) {
   return FR_TO_EN[lower] || guessedName;
 }
 
+// Mapping inverse EN -> FR, construit a partir de FR_TO_EN. Utile quand une
+// source externe (ex: TCGTracking) donne un nom anglais et qu'on doit le
+// traduire vers le francais pour interroger TCGdex (recherche en /fr/).
+const EN_TO_FR = Object.fromEntries(
+  Object.entries(FR_TO_EN).map(([fr, en]) => [en.toLowerCase(), fr])
+);
+
+/**
+ * Traduit un nom anglais vers le francais si on a une correspondance
+ * connue. Sinon retourne le nom original tel quel.
+ */
+export function translateToFrench(guessedName) {
+  if (!guessedName) return guessedName;
+  const lower = guessedName.toLowerCase().trim();
+  return EN_TO_FR[lower] || guessedName;
+}
+
 // Noms anglais dont l'equivalent francais est DIFFERENT (ex: Charizard vs
 // Dracaufeu). Sert de signal de langue: si le titre utilise ce nom anglais
 // plutot que le nom francais, la carte physique est tres probablement
