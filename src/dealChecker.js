@@ -3,6 +3,7 @@ import { lookupTcgdexCote } from "./coteTcgdex.js";
 import { looksLikeEnglishCardName } from "./pokemonNamesFr.js";
 import { identifyCardWithAI } from "./aiCardIdentifier.js";
 import { findSetAbbreviation } from "./setAbbreviations.js";
+import { identifyCardFromPhoto } from "./photoIdentifier.js";
 
 const CONDITION_MULTIPLIERS = {
   mint: 1.0,
@@ -46,10 +47,21 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
 
   const aiResult = await identifyCardWithAI(item.title || "");
 
-  const cardName = aiResult?.pokemonName || analysis.cardName;
+  let cardName = aiResult?.pokemonName || analysis.cardName;
   const setNumber = aiResult?.setNumber || (analysis.setNumber ? `${analysis.setNumber.number}/${analysis.setNumber.setTotal}` : null);
   const isGraded = aiResult?.isGraded ?? analysis.isGraded;
-  const identificationSource = aiResult?.pokemonName ? "IA" : analysis.cardNameSource;
+  let identificationSource = aiResult?.pokemonName ? "IA" : analysis.cardNameSource;
+
+  // --- Repli photo : le titre (et l'IA sur le titre) ne suffisent pas ->
+  // on essaie de lire la photo de l'annonce. Desactive si
+  // PHOTO_IDENTIFIER_URL n'est pas configuree (voir photoIdentifier.js).
+  if (!cardName) {
+    const photoResult = await identifyCardFromPhoto(item.photoHighResUrl);
+    if (photoResult?.cardName) {
+      cardName = photoResult.cardName;
+      identificationSource = "photo";
+    }
+  }
 
   if (!cardName) {
     return { isDeal: false, reason: "nom_carte_non_extrait", titleGuess };
