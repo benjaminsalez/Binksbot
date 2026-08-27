@@ -4,7 +4,8 @@ import axios from "axios";
 // separement sur Railway, voir photo_service/). Vide/non definie ->
 // l'identification par photo est simplement desactivee, le bot continue de
 // fonctionner normalement avec l'identification par titre uniquement.
-const { PHOTO_IDENTIFIER_URL } = process.env;
+const { PHOTO_IDENTIFIER_URL, DEAL_DEBUG } = process.env;
+const dealDebugEnabled = DEAL_DEBUG === "true";
 
 const TIMEOUT_MS = 12000;
 
@@ -20,7 +21,22 @@ const TIMEOUT_MS = 12000;
  * fonctionnalite).
  */
 export async function identifyCardFromPhoto(photoUrl) {
-  if (!PHOTO_IDENTIFIER_URL || !photoUrl) return null;
+  if (!PHOTO_IDENTIFIER_URL) {
+    if (dealDebugEnabled) {
+      console.log("[DEBUG photo] PHOTO_IDENTIFIER_URL non definie, repli photo desactive.");
+    }
+    return null;
+  }
+  if (!photoUrl) {
+    if (dealDebugEnabled) {
+      console.log("[DEBUG photo] Aucune photo disponible sur cette annonce, repli photo ignore.");
+    }
+    return null;
+  }
+
+  if (dealDebugEnabled) {
+    console.log(`[DEBUG photo] Tentative d'identification via photo: ${photoUrl}`);
+  }
 
   try {
     const response = await axios.post(
@@ -30,6 +46,11 @@ export async function identifyCardFromPhoto(photoUrl) {
     );
 
     const { name, hp, attacks } = response.data || {};
+
+    if (dealDebugEnabled) {
+      console.log(`[DEBUG photo] Reponse du service: ${JSON.stringify(response.data)}`);
+    }
+
     if (!name) return null;
 
     return {
