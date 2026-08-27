@@ -6,10 +6,12 @@ ENV PYTHONUNBUFFERED=1
 
 # Librairies systeme necessaires a OpenCV, meme en version headless (meme
 # souci rencontre avec Pokeum -> meme correctif applique directement ici).
+# curl ajoute pour faciliter les tests manuels via la Console Railway.
 RUN apt-get update && apt-get install -y \
     libgl1 \
     libglib2.0-0 \
     libgomp1 \
+    curl \
     --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
@@ -22,6 +24,4 @@ COPY . .
 
 # Pas de sync ni d'index build ici (contrairement a Pokeum) : le service
 # n'a pas de base a synchroniser, il analyse une photo a la demande. Les
-# modeles PaddleOCR se telechargent au premier demarrage (quelques dizaines
-# de Mo, largement plus rapide que le sync TCGdex de Pokeum).
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# modeles PaddleOCR se telechargent au premier demarrage
