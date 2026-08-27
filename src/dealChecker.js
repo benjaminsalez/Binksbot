@@ -14,18 +14,6 @@ const CONDITION_MULTIPLIERS = {
 };
 
 /**
- * Extrait au mieux un nom/numero/serie depuis la reponse produit
- * TCGTracking (forme exacte pas totalement documentee, extraction
- * defensive avec plusieurs chemins possibles).
- */
-function extractFromTcgTrackingProduct(product) {
-  const name = product?.name || product?.card_name || null;
-  const number = product?.number || product?.collector_number || null;
-  const setName = product?.set_name || product?.expansion || null;
-  return { name, number, setName };
-}
-
-/**
  * Analyse une annonce et determine si c'est une bonne affaire par rapport
  * a la cote TCGdex (prix Cardmarket), en tenant compte de l'etat detecte.
  * Retourne TOUJOURS un objet diagnostic, avec isDeal:true/false et une
@@ -104,15 +92,12 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
   // on tente le scan d'image en dernier recours avant d'abandonner.
   if (!cote && item.photoHighResUrl) {
     const scanResult = await scanCardImage(item.photoHighResUrl);
-    if (scanResult) {
-      const extracted = extractFromTcgTrackingProduct(scanResult.product);
-      if (extracted.name) {
-        const nameForTcgdex = translateToFrench(extracted.name);
-        const scanCote = await lookupTcgdexCote(nameForTcgdex, extracted.number, item.title);
-        if (scanCote) {
-          cote = scanCote;
-          finalIdentificationSource = `scan image (${scanResult.score}%)`;
-        }
+    if (scanResult?.cardName) {
+      const nameForTcgdex = translateToFrench(scanResult.cardName);
+      const scanCote = await lookupTcgdexCote(nameForTcgdex, scanResult.setNumber, item.title);
+      if (scanCote) {
+        cote = scanCote;
+        finalIdentificationSource = `scan image (${scanResult.score}%)`;
       }
     }
   }
