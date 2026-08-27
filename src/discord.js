@@ -35,6 +35,22 @@ export async function sendDiscordAlert(webhookUrl, item, searchLabel, gifUrl, de
       .join(" ");
     fields.push({ name: "🔍 Carte detectee", value: cardLine || "inconnue", inline: false });
 
+    // Methode d'identification utilisee, toujours visible (pas juste un
+    // symbole cache dans le titre) -> important de savoir si ca vient du
+    // texte de l'annonce (fiable) ou d'un scan photo/IA (a verifier de plus
+    // pres, plus susceptible d'erreur).
+    const sourceLabels = {
+      dictionnaire: "📝 Texte de l'annonce",
+      devine: "📝 Texte de l'annonce (estimation)",
+      IA: "🤖 IA (texte)",
+    };
+    const sourceLabel =
+      sourceLabels[dealInfo.identificationSource] ||
+      (dealInfo.identificationSource?.startsWith("scan image")
+        ? `📷 ${dealInfo.identificationSource}`
+        : dealInfo.identificationSource || "inconnue");
+    fields.push({ name: "Methode d'identification", value: sourceLabel, inline: false });
+
     fields.push({ name: "Cote Cardmarket (TCGdex)", value: `${dealInfo.referencePrice} EUR`, inline: true });
 
     fields.push(
@@ -56,7 +72,7 @@ export async function sendDiscordAlert(webhookUrl, item, searchLabel, gifUrl, de
   }
 
   const embed = {
-    title: `${dealInfo ? `${dealInfo.cardName}${dealInfo.setName ? ` (${dealInfo.setName})` : ""}${dealInfo.identificationSource === "IA" ? " 🤖" : ""} — ` : ""}${item.title?.slice(0, 200) || "Nouvelle annonce Pokemon"}`,
+    title: `${dealInfo ? `${dealInfo.cardName}${dealInfo.setName ? ` (${dealInfo.setName})` : ""} — ` : ""}${item.title?.slice(0, 200) || "Nouvelle annonce Pokemon"}`,
     url: item.url,
     color: getEmbedColor(dealInfo),
     description: dealInfo
