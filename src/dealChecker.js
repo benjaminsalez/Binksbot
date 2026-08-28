@@ -76,16 +76,16 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
   }
 
   if (isGraded) {
-    return { isDeal: false, reason: "carte_gradee", cardNameGuess: cardName, titleGuess };
+    return { isDeal: false, reason: "carte_gradee", cardNameGuess: cardName, identificationSource, titleGuess };
   }
 
   // --- Langue ---
   const languageDetected = aiResult?.language || analysis.language;
   if (languageDetected && languageDetected !== "fr") {
-    return { isDeal: false, reason: "langue_non_fr", langueDetectee: languageDetected, titleGuess };
+    return { isDeal: false, reason: "langue_non_fr", langueDetectee: languageDetected, cardNameGuess: cardName, identificationSource, titleGuess };
   }
   if (!languageDetected && looksLikeEnglishCardName(cardName)) {
-    return { isDeal: false, reason: "nom_anglais_detecte", cardNameGuess: cardName, titleGuess };
+    return { isDeal: false, reason: "nom_anglais_detecte", cardNameGuess: cardName, identificationSource, titleGuess };
   }
 
   // --- Etat ---
@@ -104,14 +104,14 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
   const cote = await lookupTcgdexCote(cardName, setNumber, titleHint);
 
   if (!cote) {
-    return { isDeal: false, reason: "cote_introuvable", cardNameGuess: cardName, titleGuess };
+    return { isDeal: false, reason: "cote_introuvable", cardNameGuess: cardName, identificationSource, titleGuess };
   }
 
   const referencePrice = cote.trendPrice * conditionMultiplier;
   const matchedName = cote.matchedName || cardName;
 
   if (referencePrice <= 0 || !item.price) {
-    return { isDeal: false, reason: "prix_invalide", cardNameGuess: matchedName, titleGuess };
+    return { isDeal: false, reason: "prix_invalide", cardNameGuess: matchedName, identificationSource, titleGuess };
   }
 
   if (referencePrice < 5) {
@@ -120,6 +120,7 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
       reason: "cote_trop_faible",
       cardNameGuess: matchedName,
       referencePrice: referencePrice.toFixed(2),
+      identificationSource,
       titleGuess,
     };
   }
@@ -139,6 +140,7 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
       referencePrice: referencePrice.toFixed(2),
       askingPrice: item.price,
       discountPercent: Math.round(discountPercent),
+      identificationSource,
       titleGuess,
     };
   }
@@ -151,6 +153,7 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
       referencePrice: referencePrice.toFixed(2),
       askingPrice: item.price,
       discountPercent: Math.round(discountPercent),
+      identificationSource,
       titleGuess,
     };
   }
