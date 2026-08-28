@@ -11,6 +11,60 @@ function getEmbedColor(dealInfo) {
   return 0x2ecc71; // vert, bonne affaire
 }
 
+const REASON_LABELS = {
+  carte_gradee: "Carte gradee (exclue)",
+  langue_non_fr: "Langue non francaise",
+  nom_anglais_detecte: "Nom anglais detecte (probable non-FR)",
+  cote_introuvable: "Cote TCGdex introuvable",
+  prix_invalide: "Prix invalide",
+  cote_trop_faible: "Cote trop faible (<5 EUR)",
+  remise_suspecte: "Remise suspecte (>85%, probable erreur)",
+  sous_le_seuil: "Remise sous le seuil du salon",
+};
+
+/**
+ * Alerte de suivi (canal dedie) envoyee a CHAQUE fois que l'identification
+ * par photo reussit a extraire un nom, que ce soit une bonne affaire ou
+ * non -> objectif purement observation, pour voir ce que le scan trouve
+ * en conditions reelles et ajuster le parseur au fil de l'eau.
+ */
+export async function sendPhotoScanAlert(webhookUrl, item, result) {
+  const cardName = result.cardName || result.cardNameGuess || "inconnu";
+  const outcome = result.isDeal
+    ? `✅ Bonne affaire: -${result.discountPercent}%`
+    : `❌ ${REASON_LABELS[result.reason] || result.reason}`;
+
+  const fields = [
+    { name: "🔍 Nom detecte (photo)", value: cardName, inline: false },
+    { name: "Resultat", value: outcome, inline: false },
+  ];
+
+  if (result.cardNumber) {
+    fields.push({ name: "Numero detecte", value: result.cardNumber, inline: true });
+  }
+  if (result.referencePrice) {
+    fields.push({ name: "Cote trouvee", value: `${result.referencePrice} EUR`, inline: true });
+  }
+  if (item.price) {
+    fields.push({ name: "Prix demande", value: `${item.price} ${item.currency || "EUR"}`, inline: true });
+  }
+
+  const embed = {
+    title: item.title?.slice(0, 200) || "Annonce Pokemon",
+    url: item.url,
+    color: result.isDeal ? 0x2ecc71 : 0x95a5a6,
+    description: "📷 Identification via scan photo (repli, titre insuffisant)",
+    fields,
+    thumbnail: item.photoUrl ? { url: item.photoUrl } : undefined,
+    timestamp: new Date().toISOString(),
+  };
+
+  await axios.post(webhookUrl, {
+    username: "Vinted Pokemon — Scan photo",
+    embeds: [embed],
+  });
+}
+
 /**
  * Envoie une alerte au webhook Discord sous forme d'embed.
  */
