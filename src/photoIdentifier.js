@@ -7,7 +7,24 @@ import axios from "axios";
 const { PHOTO_IDENTIFIER_URL, DEAL_DEBUG } = process.env;
 const dealDebugEnabled = DEAL_DEBUG === "true";
 
-const TIMEOUT_MS = 12000;
+const TIMEOUT_MS = 20000;
+
+// File d'attente simple : le service photo (PaddleOCR) ne traite qu'une
+// image a la fois en interne -> si le bot envoie plusieurs requetes en
+// parallele (plusieurs salons scannes en meme temps), elles se
+// bousculaient et depassaient le timeout (observe en prod le 28/08,
+// confirme par une courbe CPU quasi plate -> pas un souci de puissance,
+// juste des requetes qui attendaient leur tour). On les met en file ici
+// cote Node pour qu'elles patientent proprement au lieu de se percuter.
+let queue = Promise.resolve();
+
+function enqueue(task) {
+  const result = queue.then(task, task);
+  // On avale les erreurs ici pour ne jamais bloquer la file si une requete
+  // echoue -> la suivante doit quand meme pouvoir s'executer.
+  queue = result.catch(() => {});
+  return result;
+}
 
 /**
  * Essaie d'identifier une carte a partir de sa photo Vinted, EN REPLI
@@ -34,32 +51,34 @@ export async function identifyCardFromPhoto(photoUrl) {
     return null;
   }
 
-  if (dealDebugEnabled) {
-    console.log(`[DEBUG photo] Tentative d'identification via photo: ${photoUrl}`);
-  }
-
-  try {
-    const response = await axios.post(
-      `${PHOTO_IDENTIFIER_URL}/identify`,
-      { image_url: photoUrl },
-      { timeout: TIMEOUT_MS }
-    );
-
-    const { name, hp, attacks } = response.data || {};
-
+  return enqueue(async () => {
     if (dealDebugEnabled) {
-      console.log(`[DEBUG photo] Reponse du service: ${JSON.stringify(response.data)}`);
+      console.log(`[DEBUG photo] Tentative d'identification via photo: ${photoUrl}`);
     }
 
-    if (!name) return null;
+    try {
+      const response = await axios.post(
+        `${PHOTO_IDENTIFIER_URL}/identify`,
+        { image_url: photoUrl },
+        { timeout: TIMEOUT_MS }
+      );
 
-    return {
-      cardName: name,
-      hp: hp ?? null,
-      attacks: attacks ?? [],
-    };
-  } catch (err) {
-    console.error("Identification par photo echouee:", err.message);
-    return null;
-  }
+      const { name, hp, attacks } = response.data || {};
+
+      if (dealDebugEnabled) {
+        console.log(`[DEBUG photo] Reponse du service: ${JSON.stringify(response.data)}`);
+      }
+
+      if (!name) return null;
+
+      return {
+        cardName: name,
+        hp: hp ?? null,
+        attacks: attacks ?? [],
+      };
+    } catch (err) {
+      console.error("Identification par photo echouee:", err.message);
+      return null;
+    }
+  });
 }
