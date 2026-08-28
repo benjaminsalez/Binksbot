@@ -51,6 +51,7 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
   let setNumber = aiResult?.setNumber || (analysis.setNumber ? `${analysis.setNumber.number}/${analysis.setNumber.setTotal}` : null);
   const isGraded = aiResult?.isGraded ?? analysis.isGraded;
   let identificationSource = aiResult?.pokemonName ? "IA" : analysis.cardNameSource;
+  let photoLanguage = null;
 
   // --- Repli photo : le titre (et l'IA sur le titre) ne suffisent pas ->
   // on essaie de lire la photo de l'annonce. Desactive si
@@ -62,9 +63,13 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
   // Barbicha) -> avec le numero, elle retrouve l'edition exacte.
   if (!cardName) {
     const photoResult = await identifyCardFromPhoto(item.photoHighResUrl);
+    if (photoResult?.possibleLot) {
+      return { isDeal: false, reason: "lot_detecte", cardNameGuess: photoResult.cardName, identificationSource: "photo", titleGuess };
+    }
     if (photoResult?.cardName) {
       cardName = photoResult.cardName;
       identificationSource = "photo";
+      photoLanguage = photoResult.language;
       if (photoResult.cardNumber) {
         setNumber = photoResult.cardNumber;
       }
@@ -80,7 +85,12 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
   }
 
   // --- Langue ---
-  const languageDetected = aiResult?.language || analysis.language;
+  // photoLanguage: detectee sur le texte COMPLET lu par l'OCR (mots comme
+  // Weakness/Faiblesse), pas juste sur le nom -> plus fiable pour les
+  // cartes venues du repli photo, dont le titre Vinted est trop generique
+  // pour aider (repere en prod le 28/08, des cartes anglaises passaient
+  // inapercues sans ca).
+  const languageDetected = aiResult?.language || analysis.language || photoLanguage;
   if (languageDetected && languageDetected !== "fr") {
     return { isDeal: false, reason: "langue_non_fr", langueDetectee: languageDetected, cardNameGuess: cardName, identificationSource, titleGuess };
   }
