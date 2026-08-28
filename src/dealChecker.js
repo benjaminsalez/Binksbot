@@ -48,18 +48,26 @@ export async function checkIfGoodDeal(item, thresholdPercent) {
   const aiResult = await identifyCardWithAI(item.title || "");
 
   let cardName = aiResult?.pokemonName || analysis.cardName;
-  const setNumber = aiResult?.setNumber || (analysis.setNumber ? `${analysis.setNumber.number}/${analysis.setNumber.setTotal}` : null);
+  let setNumber = aiResult?.setNumber || (analysis.setNumber ? `${analysis.setNumber.number}/${analysis.setNumber.setTotal}` : null);
   const isGraded = aiResult?.isGraded ?? analysis.isGraded;
   let identificationSource = aiResult?.pokemonName ? "IA" : analysis.cardNameSource;
 
   // --- Repli photo : le titre (et l'IA sur le titre) ne suffisent pas ->
   // on essaie de lire la photo de l'annonce. Desactive si
   // PHOTO_IDENTIFIER_URL n'est pas configuree (voir photoIdentifier.js).
+  // Le numero de carte (cardNumber) est important ici : sans lui,
+  // lookupTcgdexCote() doit deviner parmi toutes les reimpressions d'un
+  // meme Pokemon au fil des annees, et refuse souvent par prudence si
+  // leurs prix divergent trop (observe en prod le 28/08 sur Noadkoko et
+  // Barbicha) -> avec le numero, elle retrouve l'edition exacte.
   if (!cardName) {
     const photoResult = await identifyCardFromPhoto(item.photoHighResUrl);
     if (photoResult?.cardName) {
       cardName = photoResult.cardName;
       identificationSource = "photo";
+      if (photoResult.cardNumber) {
+        setNumber = photoResult.cardNumber;
+      }
     }
   }
 
