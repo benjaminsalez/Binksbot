@@ -108,19 +108,28 @@ def parse_card_text(texts: list[str]) -> dict:
     result["name"] = name_match.group(1).strip() if name_match else raw_name.strip()
 
     hp_pattern = re.compile(r"(\d{2,3})[\s.]*[Pp][VvYy]|[Pp][VvYy][\s.]*(\d{2,3})")
-    for t in texts[:4]:
+    hp_index = None
+    for i, t in enumerate(texts[:4]):
         m = hp_pattern.search(t)
         if m:
             result["hp"] = int(m.group(1) or m.group(2))
+            hp_index = i
             break
     if result["hp"] is None:
-        for t in texts[:4]:
+        for i, t in enumerate(texts[:4]):
             if re.fullmatch(r"\d{2,3}", t.strip()):
                 result["hp"] = int(t.strip())
+                hp_index = i
                 break
 
+    # On ne scanne les attaques qu'APRES la paire nom+PV, pour ne plus la
+    # confondre avec une vraie attaque (bug repere en prod le 28/08 sur
+    # Rubombelle et Cizayox : "Rubombelle","70" et "Cizayox","140"
+    # captures a tort comme si c'etait des attaques).
+    start = (hp_index + 1) if hp_index is not None else 1
+
     dmg_pattern = re.compile(r"^\d{1,3}\+?$")
-    for i in range(len(texts) - 1):
+    for i in range(start, len(texts) - 1):
         name_candidate = texts[i].strip()
         dmg_candidate = texts[i + 1].strip()
         if (
