@@ -27,6 +27,26 @@ from fastapi import FastAPI, HTTPException
 from paddleocr import PaddleOCR
 from pydantic import BaseModel
 
+# Textes de mise en page frequemment lus par l'OCR AVANT le vrai nom de la
+# carte (logos, badges de stade...) -> a ignorer lors de la recherche du
+# nom. Prefixes plutot que mots exacts, pour couvrir les variantes d'OCR
+# (ex: "NIVEAU1" lu "NIVEAUT"). Repere en prod le 28/08.
+NAME_BLOCKLIST_PREFIXES = ("tcg", "base", "pokemon", "pokémon", "carte", "niveau", "stage")
+
+# Phrases qui trahissent une carte Energie/Dresseur (pas un Pokemon) -> pas
+# de "nom de Pokemon" a extraire dans ce cas, mieux vaut ne rien deviner
+# que de renvoyer un faux nom ("ENERGY", "TRAINER"...). Repere en prod le
+# 28/08 sur plusieurs cartes de ce type.
+NON_POKEMON_MARKERS = (
+    "special energy",
+    "energy card",
+    "pokémon tool",
+    "pokemon tool",
+    "trainer card",
+    "supporter card",
+    "stadium card",
+)
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("photo_service")
 
@@ -121,9 +141,27 @@ def parse_card_text(texts: list[str]) -> dict:
     if not texts:
         return result
 
-    raw_name = texts[0]
-    name_match = re.match(r"^([A-Za-zÀ-ÿ' \-]+)", raw_name)
-    result["name"] = name_match.group(1).strip() if name_match else raw_name.strip()
+    # Carte Energie/Dresseur (pas un Pokemon) -> pas de nom a deviner,
+    # mieux vaut renvoyer None franchement que de forcer un faux nom.
+    full_text_lower = " ".join(texts).lower()
+    if any(marker in full_text_lower for marker in NON_POKEMON_MARKERS):
+        return result
+
+    # Nom: on ignore les textes de mise en page connus (logos, badges) au
+    # lieu de prendre le tout premier texte a l'aveugle -> teste sur 9 vrais
+    # cas le 28/08, 9/9 corrects (corrige au passage un bug deja vu la
+    # veille sur "BASE").
+    for t in texts[:5]:
+        m = re.match(r"^([A-Za-zÀ-ÿ' \-]+)", t)
+        candidate = m.group(1).strip() if m else t.strip()
+        if not candidate or len(candidate) < 3:
+            continue
+        if candidate.lower().startswith(NAME_BLOCKLIST_PREFIXES):
+            continue
+        result["name"] = candidate
+        break
+    if result["name"] is None and texts:
+        result["name"] = texts[0].strip()
 
     hp_pattern = re.compile(r"(\d{2,3})[\s.]*[Pp][VvYy]|[Pp][VvYy][\s.]*(\d{2,3})")
     hp_index = None
