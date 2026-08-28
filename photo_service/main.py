@@ -50,6 +50,13 @@ TYPE_LABEL_MARKERS = (
     "item card",
 )
 
+# Marqueurs de langue lus dans le texte complet de la carte (pas juste le
+# nom) -> plus fiable que de deviner a partir du seul nom, utile car le
+# titre Vinted est souvent trop generique pour donner la langue (demande
+# du 28/08 : les cartes anglaises passaient inapercues sans ca).
+ENGLISH_MARKERS = ("weakness", "resistance", "retreat cost", "basic pokémon", "basic pokemon", " hp", "trainer card")
+FRENCH_MARKERS = ("faiblesse", "résistance", "retraite", " pv", "dresseur")
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("photo_service")
 
@@ -80,6 +87,8 @@ class IdentifyResponse(BaseModel):
     name: str | None = None
     hp: int | None = None
     card_number: str | None = None
+    language: str | None = None
+    possible_lot: bool = False
     attacks: list[Attack] = []
     raw_text: list[str] = []
 
@@ -132,6 +141,35 @@ def extract_card_number(texts: list[str]) -> str | None:
         m = pattern.search(t)
         if m:
             return f"{m.group(1)}/{m.group(2)}"
+    return None
+
+
+def count_distinct_card_numbers(texts: list[str]) -> int:
+    """Compte les numeros de carte DIFFERENTS trouves dans le texte -> un
+    signe assez fiable de lot (plusieurs cartes visibles sur la meme
+    photo). Ne couvre pas tous les lots (certains n'ont pas de numero
+    lisible du tout), mais evite au moins de deviner a l'aveugle quand
+    plusieurs numeros distincts sont bien presents."""
+    pattern = re.compile(r"\b([A-Za-z]{0,3}\d{1,3})\s*/\s*([A-Za-z]{0,3}\d{1,3})\b")
+    found = set()
+    for t in texts:
+        for m in pattern.finditer(t):
+            found.add(f"{m.group(1)}/{m.group(2)}")
+    return len(found)
+
+
+def detect_language(texts: list[str]) -> str | None:
+    """Devine la langue a partir du texte COMPLET de la carte (mots comme
+    Weakness/Faiblesse), pas juste du nom -> plus fiable qu'une detection
+    basee uniquement sur le nom, qui ratait des cartes anglaises quand le
+    titre Vinted etait trop generique pour aider (repere le 28/08)."""
+    full = " ".join(texts).lower()
+    en_score = sum(1 for m in ENGLISH_MARKERS if m in full)
+    fr_score = sum(1 for m in FRENCH_MARKERS if m in full)
+    if en_score > fr_score and en_score > 0:
+        return "en"
+    if fr_score > 0:
+        return "fr"
     return None
 
 
@@ -247,6 +285,8 @@ def identify(req: IdentifyRequest):
             texts.extend(res.get("rec_texts", []))
         parsed = parse_card_text(texts)
         parsed["card_number"] = extract_card_number(texts)
+        parsed["language"] = detect_language(texts)
+        parsed["possible_lot"] = count_distinct_card_numbers(texts) > 1
         parsed["raw_text"] = texts
         return parsed
     except Exception as exc:
