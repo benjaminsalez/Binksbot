@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { searchVinted } from "./vinted.js";
-import { sendDiscordAlert } from "./discord.js";
+import { sendDiscordAlert, sendPhotoScanAlert } from "./discord.js";
 import { loadSeenIds, saveSeenIds } from "./storage.js";
 import { checkIfGoodDeal } from "./dealChecker.js";
 import { rotateRailwayRegion } from "./railwayRotator.js";
@@ -13,6 +13,7 @@ const {
   VINTED_COOKIE,
   DISCORD_GIFS,
   DEAL_DEBUG,
+  PHOTO_SCAN_WEBHOOK_URL,
 } = process.env;
 
 const dealDebugEnabled = DEAL_DEBUG === "true";
@@ -200,6 +201,18 @@ async function checkOnce() {
 
               if (dealDebugEnabled) {
                 console.log(`[DEBUG ${group.label}]`, JSON.stringify(result));
+              }
+
+              // Alerte de suivi sur un canal dedie: a chaque fois que la
+              // photo a reussi a identifier un nom, peu importe si ca finit
+              // en bonne affaire ou pas -> juste pour observer ce que le
+              // scan trouve en conditions reelles.
+              if (result.identificationSource === "photo" && PHOTO_SCAN_WEBHOOK_URL) {
+                try {
+                  await sendPhotoScanAlert(PHOTO_SCAN_WEBHOOK_URL, item, result);
+                } catch (err) {
+                  console.error("Erreur envoi alerte scan photo:", err.message);
+                }
               }
 
               if (!result.isDeal) continue; // pas une bonne affaire confirmee -> on ignore silencieusement
