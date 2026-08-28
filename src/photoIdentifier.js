@@ -63,7 +63,7 @@ export async function identifyCardFromPhoto(photoUrl) {
         { timeout: TIMEOUT_MS }
       );
 
-      const { name, hp, attacks } = response.data || {};
+      const { name, hp, card_number, attacks } = response.data || {};
 
       if (dealDebugEnabled) {
         console.log(`[DEBUG photo] Reponse du service: ${JSON.stringify(response.data)}`);
@@ -74,6 +74,7 @@ export async function identifyCardFromPhoto(photoUrl) {
       return {
         cardName: name,
         hp: hp ?? null,
+        cardNumber: card_number ?? null,
         attacks: attacks ?? [],
       };
     } catch (err) {
