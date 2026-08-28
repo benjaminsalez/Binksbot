@@ -135,6 +135,14 @@ def extract_card_number(texts: list[str]) -> str | None:
     return None
 
 
+def fix_glued_ex_suffix(name: str) -> str:
+    """Separe le suffixe ex/EX colle sans separateur au nom (ex:
+    'Morpekoex' -> 'Morpeko-ex', 'YveltalEX' -> 'Yveltal-EX') -> repere en
+    prod le 28/08, ces cartes ne matchaient rien cote TCGdex tant que le
+    suffixe restait colle (leurs fiches utilisent un separateur)."""
+    return re.sub(r"([a-zà-ÿ])(EX|ex)$", r"\1-\2", name)
+
+
 def parse_card_text(texts: list[str]) -> dict:
     """Extrait Nom + PV + attaque(s) a partir de la liste de textes OCR bruts.
     Voir les tests manuels du 27/08 pour la logique (regex, pas de ML)."""
@@ -168,12 +176,19 @@ def parse_card_text(texts: list[str]) -> dict:
             candidate = m.group(1).strip() if m else t.strip()
             if not candidate or len(candidate) < 3:
                 continue
+            # doit contenir au moins une lettre -> corrige un bug repere
+            # en prod le 28/08 ou un texte purement numerique ("320",
+            # confondu avec des PV) etait pris a tort pour un nom.
+            if not re.search(r"[A-Za-zÀ-ÿ]", candidate):
+                continue
             if candidate.lower().startswith(NAME_BLOCKLIST_PREFIXES):
                 continue
             result["name"] = candidate
             break
     if result["name"] is None and texts:
         result["name"] = texts[0].strip()
+    if result["name"]:
+        result["name"] = fix_glued_ex_suffix(result["name"])
 
     hp_pattern = re.compile(r"(\d{2,3})[\s.]*[Pp][VvYy]|[Pp][VvYy][\s.]*(\d{2,3})")
     hp_index = None
