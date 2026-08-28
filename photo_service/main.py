@@ -33,11 +33,13 @@ from pydantic import BaseModel
 # (ex: "NIVEAU1" lu "NIVEAUT"). Repere en prod le 28/08.
 NAME_BLOCKLIST_PREFIXES = ("tcg", "base", "pokemon", "pokémon", "carte", "niveau", "stage")
 
-# Phrases qui trahissent une carte Energie/Dresseur (pas un Pokemon) -> pas
-# de "nom de Pokemon" a extraire dans ce cas, mieux vaut ne rien deviner
-# que de renvoyer un faux nom ("ENERGY", "TRAINER"...). Repere en prod le
-# 28/08 sur plusieurs cartes de ce type.
-NON_POKEMON_MARKERS = (
+# Etiquettes de type de carte Energie/Dresseur/Objet -> le vrai nom de la
+# carte est colle juste AVANT cette etiquette dans le meme bloc de texte
+# OCR (ex: "Potion Energy Special Energy Card" -> nom = "Potion Energy").
+# Utile car ces cartes interessent aussi l'utilisateur, pas seulement les
+# Pokemon (demande du 28/08).
+TYPE_LABEL_MARKERS = (
+    "special energy card",
     "special energy",
     "energy card",
     "pokémon tool",
@@ -45,6 +47,7 @@ NON_POKEMON_MARKERS = (
     "trainer card",
     "supporter card",
     "stadium card",
+    "item card",
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -118,19 +121,17 @@ def isolate_card(img: np.ndarray, pad_frac: float = 0.04, bottom_extra: float = 
 
 
 def extract_card_number(texts: list[str]) -> str | None:
-    """Cherche le numero de carte au format NNN/NNN (ex: '081/189'). Distinct
+    """Cherche le numero de carte au format NNN/NNN (ex: '081/189') ou avec
+    un prefixe de lettres pour les sous-series speciales comme les cartes
+    "Trainer Gallery" (ex: 'TG02/TG30', repere en prod le 28/08). Distinct
     du numero de Pokedex qui apparait parfois dans le texte de description
     ("N 273 Pokemon...") -> celui-la n'a jamais de slash, donc pas de
-    risque de confusion avec ce pattern. Teste sur 7 vrais cas le 28/08,
-    5/7 reussis (les 2 rates n'avaient tout simplement pas le numero dans
-    le texte OCR capte, pas un souci de cette fonction)."""
-    pattern = re.compile(r"\b(\d{1,3})\s*/\s*(\d{1,3})\b")
+    risque de confusion avec ce pattern."""
+    pattern = re.compile(r"\b([A-Za-z]{0,3}\d{1,3})\s*/\s*([A-Za-z]{0,3}\d{1,3})\b")
     for t in texts:
         m = pattern.search(t)
         if m:
-            local_id, total = m.group(1), m.group(2)
-            if 1 <= int(total) <= 999:
-                return f"{local_id}/{total}"
+            return f"{m.group(1)}/{m.group(2)}"
     return None
 
 
@@ -141,25 +142,36 @@ def parse_card_text(texts: list[str]) -> dict:
     if not texts:
         return result
 
-    # Carte Energie/Dresseur (pas un Pokemon) -> pas de nom a deviner,
-    # mieux vaut renvoyer None franchement que de forcer un faux nom.
-    full_text_lower = " ".join(texts).lower()
-    if any(marker in full_text_lower for marker in NON_POKEMON_MARKERS):
-        return result
+    # Carte Energie/Dresseur/Objet : le vrai nom est colle juste AVANT
+    # l'etiquette de type dans le meme bloc OCR (ex: "Potion Energy
+    # Special Energy Card" -> nom = "Potion Energy"). Teste le 28/08 sur
+    # de vrais cas ("Potion Energy", "Counterattack Claws").
+    for t in texts[:6]:
+        t_lower = t.lower()
+        for marker in TYPE_LABEL_MARKERS:
+            idx = t_lower.find(marker)
+            if idx > 2:
+                name_part = t[:idx].strip()
+                if len(name_part) >= 3:
+                    result["name"] = name_part
+                    break
+        if result["name"]:
+            break
 
-    # Nom: on ignore les textes de mise en page connus (logos, badges) au
-    # lieu de prendre le tout premier texte a l'aveugle -> teste sur 9 vrais
-    # cas le 28/08, 9/9 corrects (corrige au passage un bug deja vu la
-    # veille sur "BASE").
-    for t in texts[:5]:
-        m = re.match(r"^([A-Za-zÀ-ÿ' \-]+)", t)
-        candidate = m.group(1).strip() if m else t.strip()
-        if not candidate or len(candidate) < 3:
-            continue
-        if candidate.lower().startswith(NAME_BLOCKLIST_PREFIXES):
-            continue
-        result["name"] = candidate
-        break
+    # Sinon, nom de Pokemon classique : on ignore les textes de mise en
+    # page connus (logos, badges) au lieu de prendre le tout premier texte
+    # a l'aveugle -> teste sur 9 vrais cas le 28/08, 9/9 corrects (corrige
+    # au passage un bug deja vu la veille sur "BASE").
+    if not result["name"]:
+        for t in texts[:5]:
+            m = re.match(r"^([A-Za-zÀ-ÿ' \-]+)", t)
+            candidate = m.group(1).strip() if m else t.strip()
+            if not candidate or len(candidate) < 3:
+                continue
+            if candidate.lower().startswith(NAME_BLOCKLIST_PREFIXES):
+                continue
+            result["name"] = candidate
+            break
     if result["name"] is None and texts:
         result["name"] = texts[0].strip()
 
